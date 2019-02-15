@@ -2,7 +2,6 @@
 {
     using EasyCaching.Core;
     using EasyCaching.Core.Internal;
-    using Enyim.Caching;
     using Microsoft.Extensions.Logging;
     using System;
     using System.Collections.Generic;
@@ -20,7 +19,7 @@
         /// <summary>
         /// The memcached client.
         /// </summary>
-        private readonly IMemcachedClient _memcachedClient;
+        private readonly EasyCachingMemcachedClient _memcachedClient;
 
         /// <summary>
         /// The options.
@@ -31,6 +30,16 @@
         /// The logger.
         /// </summary>
         private readonly ILogger _logger;
+
+        /// <summary>
+        /// The cache stats.
+        /// </summary>
+        private readonly CacheStats _cacheStats;
+
+        /// <summary>
+        /// The name.
+        /// </summary>
+        private readonly string _name;
 
         /// <summary>
         /// <see cref="T:EasyCaching.Memcached.DefaultMemcachedCachingProvider"/>
@@ -56,21 +65,53 @@
         /// <value>The type of the caching provider.</value>
         public CachingProviderType CachingProviderType => _options.CachingProviderType;
 
-        private readonly CacheStats _cacheStats;
-
+        /// <summary>
+        /// Gets the cache stats.
+        /// </summary>
+        /// <value>The cache stats.</value>
         public CacheStats CacheStats => _cacheStats;
+
+        /// <summary>
+        /// Gets the name.
+        /// </summary>
+        /// <value>The name.</value>
+        public string Name => this._name;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="T:EasyCaching.Memcached.DefaultMemcachedCachingProvider"/> class.
         /// </summary>
-        /// <param name="memcachedClient">Memcached client.</param>
+        /// <param name="memcachedClients">Memcached client.</param>
+        /// <param name="options">Options.</param>
+        /// <param name="loggerFactory">Logger factory.</param>
         public DefaultMemcachedCachingProvider(
-            IMemcachedClient memcachedClient,
+            IEnumerable<EasyCachingMemcachedClient> memcachedClients,
             IOptionsMonitor<MemcachedOptions> options,
             ILoggerFactory loggerFactory = null)
         {
-            this._memcachedClient = memcachedClient;
+            this._name = EasyCachingConstValue.DefaultMemcachedName;
+            this._memcachedClient = memcachedClients.FirstOrDefault(x => x.Name.Equals(this._name));
             this._options = options.CurrentValue;
+            this._logger = loggerFactory?.CreateLogger<DefaultMemcachedCachingProvider>();
+
+            this._cacheStats = new CacheStats();
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="T:EasyCaching.Memcached.DefaultMemcachedCachingProvider"/> class.
+        /// </summary>
+        /// <param name="name">Name.</param>
+        /// <param name="memcachedClients">Memcached client.</param>
+        /// <param name="options">Options.</param>
+        /// <param name="loggerFactory">Logger factory.</param>
+        public DefaultMemcachedCachingProvider(
+            string name,
+            IEnumerable<EasyCachingMemcachedClient> memcachedClients,
+            MemcachedOptions options,
+            ILoggerFactory loggerFactory = null)
+        {
+            this._name = name;
+            this._memcachedClient = memcachedClients.FirstOrDefault(x => x.Name.Equals(this._name));
+            this._options = options;
             this._logger = loggerFactory?.CreateLogger<DefaultMemcachedCachingProvider>();
 
             this._cacheStats = new CacheStats();
@@ -84,7 +125,7 @@
         /// <param name="dataRetriever">Data retriever.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public CacheValue<T> Get<T>(string cacheKey, Func<T> dataRetriever, TimeSpan expiration) where T : class
+        public CacheValue<T> Get<T>(string cacheKey, Func<T> dataRetriever, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
@@ -104,10 +145,19 @@
             if (_options.EnableLogging)
                 _logger?.LogInformation($"Cache Missed : cachekey = {cacheKey}");
 
-            var item = dataRetriever?.Invoke();
+            var flag = _memcachedClient.Store(Enyim.Caching.Memcached.StoreMode.Add, this.HandleCacheKey($"{cacheKey}_Lock"), 1, TimeSpan.FromMilliseconds(_options.LockMs));
+
+            if (!flag)
+            {
+                System.Threading.Thread.Sleep(_options.SleepMs);
+                return Get(cacheKey, dataRetriever, expiration);
+            }
+
+            var item = dataRetriever();
             if (item != null)
             {
                 this.Set(cacheKey, item, expiration);
+                _memcachedClient.Remove(this.HandleCacheKey($"{cacheKey}_Lock"));
                 return new CacheValue<T>(item, true);
             }
             else
@@ -124,35 +174,44 @@
         /// <param name="dataRetriever">Data retriever.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task<CacheValue<T>> GetAsync<T>(string cacheKey, Func<Task<T>> dataRetriever, TimeSpan expiration) where T : class
+        public async Task<CacheValue<T>> GetAsync<T>(string cacheKey, Func<Task<T>> dataRetriever, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
 
-            var result = await _memcachedClient.GetValueAsync<T>(this.HandleCacheKey(cacheKey));
-            if (result != null)
+            var result = await _memcachedClient.GetAsync<T>(this.HandleCacheKey(cacheKey));
+            if (result.Success)
             {
                 CacheStats.OnHit();
 
                 if (_options.EnableLogging)
                     _logger?.LogInformation($"Cache Hit : cachekey = {cacheKey}");
 
-                return new CacheValue<T>(result, true);
+                return new CacheValue<T>(result.Value, true);
             }
 
             CacheStats.OnMiss();
 
             if (_options.EnableLogging)
                 _logger?.LogInformation($"Cache Missed : cachekey = {cacheKey}");
+                
+            var flag = await _memcachedClient.StoreAsync(Enyim.Caching.Memcached.StoreMode.Add, this.HandleCacheKey($"{cacheKey}_Lock"), 1, TimeSpan.FromMilliseconds(_options.LockMs));
 
-            var item = await dataRetriever?.Invoke();
+            if (!flag)
+            {
+                await Task.Delay(_options.SleepMs);
+                return await GetAsync(cacheKey, dataRetriever, expiration);
+            }
+
+            var item = await dataRetriever();
             if (item != null)
             {
                 await this.SetAsync(cacheKey, item, expiration);
+                await _memcachedClient.RemoveAsync(this.HandleCacheKey($"{cacheKey}_Lock"));
                 return new CacheValue<T>(item, true);
             }
             else
-            {              
+            {
                 return CacheValue<T>.NoValue;
             }
         }
@@ -163,14 +222,14 @@
         /// <returns>The get.</returns>
         /// <param name="cacheKey">Cache key.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public CacheValue<T> Get<T>(string cacheKey)// where T : class
+        public CacheValue<T> Get<T>(string cacheKey)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
             if (_memcachedClient.Get(this.HandleCacheKey(cacheKey)) is T result)
             {
                 CacheStats.OnHit();
-                
+
                 if (_options.EnableLogging)
                     _logger?.LogInformation($"Cache Hit : cachekey = {cacheKey}");
 
@@ -193,19 +252,19 @@
         /// <returns>The async.</returns>
         /// <param name="cacheKey">Cache key.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task<CacheValue<T>> GetAsync<T>(string cacheKey)// where T : class
+        public async Task<CacheValue<T>> GetAsync<T>(string cacheKey)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            var result = await _memcachedClient.GetValueAsync<T>(this.HandleCacheKey(cacheKey));
-            if (result != null)
+            var result = await _memcachedClient.GetAsync<T>(this.HandleCacheKey(cacheKey));
+            if (result.Success)
             {
                 CacheStats.OnHit();
 
                 if (_options.EnableLogging)
                     _logger?.LogInformation($"Cache Hit : cachekey = {cacheKey}");
 
-                return new CacheValue<T>(result, true);
+                return new CacheValue<T>(result.Value, true);
             }
             else
             {
@@ -250,7 +309,7 @@
         /// <param name="cacheValue">Cache value.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public void Set<T>(string cacheKey, T cacheValue, TimeSpan expiration)// where T : class
+        public void Set<T>(string cacheKey, T cacheValue, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
@@ -259,7 +318,7 @@
             if (MaxRdSecond > 0)
             {
                 var addSec = new Random().Next(1, MaxRdSecond);
-                expiration.Add(new TimeSpan(0, 0, addSec));
+                expiration = expiration.Add(TimeSpan.FromSeconds(addSec));
             }
 
             _memcachedClient.Store(Enyim.Caching.Memcached.StoreMode.Set, this.HandleCacheKey(cacheKey), cacheValue, expiration);
@@ -273,7 +332,7 @@
         /// <param name="cacheValue">Cache value.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task SetAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)// where T : class
+        public async Task SetAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
@@ -282,7 +341,7 @@
             if (MaxRdSecond > 0)
             {
                 var addSec = new Random().Next(1, MaxRdSecond);
-                expiration.Add(new TimeSpan(0, 0, addSec));
+                expiration = expiration.Add(TimeSpan.FromSeconds(addSec));
             }
 
             await _memcachedClient.StoreAsync(Enyim.Caching.Memcached.StoreMode.Set, this.HandleCacheKey(cacheKey), cacheValue, expiration);
@@ -319,7 +378,7 @@
         /// <param name="cacheValue">Cache value.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public void Refresh<T>(string cacheKey, T cacheValue, TimeSpan expiration)// where T : class
+        public void Refresh<T>(string cacheKey, T cacheValue, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
@@ -337,7 +396,7 @@
         /// <param name="cacheValue">Cache value.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task RefreshAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)// where T : class
+        public async Task RefreshAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
@@ -429,7 +488,7 @@
         /// <param name="values">Values.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public void SetAll<T>(IDictionary<string, T> values, TimeSpan expiration)// where T : class
+        public void SetAll<T>(IDictionary<string, T> values, TimeSpan expiration)
         {
             ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
             ArgumentCheck.NotNullAndCountGTZero(values, nameof(values));
@@ -447,7 +506,7 @@
         /// <param name="values">Values.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task SetAllAsync<T>(IDictionary<string, T> values, TimeSpan expiration)// where T : class
+        public async Task SetAllAsync<T>(IDictionary<string, T> values, TimeSpan expiration)
         {
             ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
             ArgumentCheck.NotNullAndCountGTZero(values, nameof(values));
@@ -466,7 +525,7 @@
         /// <returns>The all.</returns>
         /// <param name="cacheKeys">Cache keys.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public IDictionary<string, CacheValue<T>> GetAll<T>(IEnumerable<string> cacheKeys)// where T : class
+        public IDictionary<string, CacheValue<T>> GetAll<T>(IEnumerable<string> cacheKeys)
         {
             ArgumentCheck.NotNullAndCountGTZero(cacheKeys, nameof(cacheKeys));
 
@@ -490,7 +549,7 @@
         /// <returns>The all async.</returns>
         /// <param name="cacheKeys">Cache keys.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> cacheKeys)// where T : class
+        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> cacheKeys)
         {
             ArgumentCheck.NotNullAndCountGTZero(cacheKeys, nameof(cacheKeys));
 
@@ -514,7 +573,7 @@
         /// <returns>The by prefix.</returns>
         /// <param name="prefix">Prefix.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public IDictionary<string, CacheValue<T>> GetByPrefix<T>(string prefix)// where T : class
+        public IDictionary<string, CacheValue<T>> GetByPrefix<T>(string prefix)
         {
             throw new NotImplementedException();
         }
@@ -525,7 +584,7 @@
         /// <returns>The by prefix async.</returns>
         /// <param name="prefix">Prefix.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(string prefix)// where T : class
+        public Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(string prefix)
         {
             throw new NotImplementedException();
         }
@@ -565,7 +624,7 @@
         /// <param name="prefix">Prefix.</param>
         public int GetCount(string prefix = "")
         {
-            if(string.IsNullOrWhiteSpace(prefix))
+            if (string.IsNullOrWhiteSpace(prefix))
             {
                 //Inaccurate, sometimes, memcached just causes items to expire but not free up or flush memory at once.
                 return int.Parse(_memcachedClient.Stats().GetRaw("curr_items").FirstOrDefault().Value);
@@ -573,7 +632,7 @@
             else
             {
                 return 0;
-            }  
+            }
         }
 
         /// <summary>
@@ -593,11 +652,57 @@
         /// </summary>
         /// <returns>The async.</returns>
         public async Task FlushAsync()
-        {   
+        {
             if (_options.EnableLogging)
                 _logger?.LogInformation("Memcached -- FlushAsync");
 
             await _memcachedClient.FlushAllAsync();
+        }
+
+        /// <summary>
+        /// Tries the set.
+        /// </summary>
+        /// <returns><c>true</c>, if set was tryed, <c>false</c> otherwise.</returns>
+        /// <param name="cacheKey">Cache key.</param>
+        /// <param name="cacheValue">Cache value.</param>
+        /// <param name="expiration">Expiration.</param>
+        /// <typeparam name="T">The 1st type parameter.</typeparam>
+        public bool TrySet<T>(string cacheKey, T cacheValue, TimeSpan expiration)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+            ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
+            ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
+
+            if (MaxRdSecond > 0)
+            {
+                var addSec = new Random().Next(1, MaxRdSecond);
+                expiration = expiration.Add(TimeSpan.FromSeconds(addSec));
+            }
+
+            return _memcachedClient.Store(Enyim.Caching.Memcached.StoreMode.Add, this.HandleCacheKey(cacheKey), cacheValue, expiration);
+        }
+
+        /// <summary>
+        /// Tries the set async.
+        /// </summary>
+        /// <returns>The set async.</returns>
+        /// <param name="cacheKey">Cache key.</param>
+        /// <param name="cacheValue">Cache value.</param>
+        /// <param name="expiration">Expiration.</param>
+        /// <typeparam name="T">The 1st type parameter.</typeparam>
+        public Task<bool> TrySetAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+            ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
+            ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
+
+            if (MaxRdSecond > 0)
+            {
+                var addSec = new Random().Next(1, MaxRdSecond);
+                expiration = expiration.Add(TimeSpan.FromSeconds(addSec));
+            }
+
+            return _memcachedClient.StoreAsync(Enyim.Caching.Memcached.StoreMode.Add, this.HandleCacheKey(cacheKey), cacheValue, expiration);
         }
 
     }

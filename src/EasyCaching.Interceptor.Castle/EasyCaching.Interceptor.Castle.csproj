@@ -7,9 +7,9 @@
     <Authors>Catcher Wong</Authors>    
     <Version>$(EasyCachingCastlePackageVersion)</Version>
     <Description>
-      Caching Interceptor based on EasyCaching.Core and Castle
+      A simple caching AOP extension library based on Castle
     </Description>
-    <PackageTags>Caching,Cache,Distributed,Memory,Interceptor,Synchronization</PackageTags>
+    <PackageTags>Interceptor,Castle,AOP,Caching,Cache</PackageTags>
     <PackageProjectUrl>https://github.com/dotnetcore/EasyCaching</PackageProjectUrl>
     <PackageLicenseUrl>https://github.com/dotnetcore/EasyCaching/blob/master/LICENSE</PackageLicenseUrl>
     <RepositoryUrl>https://github.com/dotnetcore/EasyCaching</RepositoryUrl>
@@ -25,8 +25,8 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Castle.Core" Version="4.3.1" />
-    <PackageReference Include="Autofac.Extras.DynamicProxy" Version="4.4.0" />
+    <PackageReference Include="Autofac.Extras.DynamicProxy" Version="4.5.0" />
     <PackageReference Include="Autofac" Version="4.8.1" />
-    <PackageReference Include="Autofac.Extensions.DependencyInjection" Version="4.2.2" />
+    <PackageReference Include="Autofac.Extensions.DependencyInjection" Version="4.3.1" />
   </ItemGroup>
 </Project>

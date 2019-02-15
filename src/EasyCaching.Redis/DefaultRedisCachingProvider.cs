@@ -1,19 +1,19 @@
 ﻿namespace EasyCaching.Redis
 {
-    using EasyCaching.Core;
-    using EasyCaching.Core.Internal;
-    using Microsoft.Extensions.Logging;
-    using Microsoft.Extensions.Options;
-    using StackExchange.Redis;
     using System;
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading.Tasks;
+    using EasyCaching.Core;
+    using EasyCaching.Core.Serialization;
+    using Microsoft.Extensions.Logging;
+    using Microsoft.Extensions.Options;
+    using StackExchange.Redis;
 
     /// <summary>
     /// Default redis caching provider.
     /// </summary>
-    public class DefaultRedisCachingProvider : IEasyCachingProvider
+    public partial class DefaultRedisCachingProvider : IEasyCachingProvider
     {
         /// <summary>
         /// The cache.
@@ -46,10 +46,20 @@
         private readonly RedisOptions _options;
 
         /// <summary>
+        /// The cache stats.
+        /// </summary>
+        private readonly CacheStats _cacheStats;
+
+        /// <summary>
+        /// The name.
+        /// </summary>
+        private readonly string _name;
+
+        /// <summary>
         /// <see cref="T:EasyCaching.Redis.DefaultRedisCachingProvider"/> 
         /// is distributed cache.
         /// </summary>
-        public bool IsDistributedCache => false;
+        public bool IsDistributedCache => true;
 
         /// <summary>
         /// Gets the order.
@@ -69,15 +79,25 @@
         /// <value>The type of the caching provider.</value>
         public CachingProviderType CachingProviderType => _options.CachingProviderType;
 
-        private readonly CacheStats _cacheStats;
-
+        /// <summary>
+        /// Gets the cache stats.
+        /// </summary>
+        /// <value>The cache stats.</value>
         public CacheStats CacheStats => _cacheStats;
+
+        /// <summary>
+        /// Gets the name.
+        /// </summary>
+        /// <value>The name.</value>
+        public string Name => this._name;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="T:EasyCaching.Redis.DefaultRedisCachingProvider"/> class.
         /// </summary>
-        /// <param name="dbProvider">DB Provider.</param>
+        /// <param name="dbProvider">Db provider.</param>
         /// <param name="serializer">Serializer.</param>
+        /// <param name="options">Options.</param>
+        /// <param name="loggerFactory">Logger factory.</param>
         public DefaultRedisCachingProvider(
             IRedisDatabaseProvider dbProvider,
             IEasyCachingSerializer serializer,
@@ -94,6 +114,35 @@
             this._cache = _dbProvider.GetDatabase();
             this._servers = _dbProvider.GetServerList();
             this._cacheStats = new CacheStats();
+            this._name = EasyCachingConstValue.DefaultRedisName;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="T:EasyCaching.Redis.DefaultRedisCachingProvider"/> class.
+        /// </summary>
+        /// <param name="name">Name.</param>
+        /// <param name="dbProviders">Db providers.</param>
+        /// <param name="serializer">Serializer.</param>
+        /// <param name="options">Options.</param>
+        /// <param name="loggerFactory">Logger factory.</param>
+        public DefaultRedisCachingProvider(
+            string name,
+            IEnumerable<IRedisDatabaseProvider> dbProviders,
+            IEasyCachingSerializer serializer,
+            IOptionsMonitor<RedisOptions> options,
+            ILoggerFactory loggerFactory = null)
+        {
+            ArgumentCheck.NotNullAndCountGTZero(dbProviders, nameof(dbProviders));
+            ArgumentCheck.NotNull(serializer, nameof(serializer));
+
+            this._dbProvider = dbProviders.FirstOrDefault(x => x.DBProviderName.Equals(name));
+            this._serializer = serializer;
+            this._options = options.CurrentValue;
+            this._logger = loggerFactory?.CreateLogger<DefaultRedisCachingProvider>();
+            this._cache = _dbProvider.GetDatabase();
+            this._servers = _dbProvider.GetServerList();
+            this._cacheStats = new CacheStats();
+            this._name = name;
         }
 
         /// <summary>
@@ -104,7 +153,7 @@
         /// <param name="dataRetriever">Data retriever.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public CacheValue<T> Get<T>(string cacheKey, Func<T> dataRetriever, TimeSpan expiration) where T : class
+        public CacheValue<T> Get<T>(string cacheKey, Func<T> dataRetriever, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
@@ -126,14 +175,22 @@
             if (_options.EnableLogging)
                 _logger?.LogInformation($"Cache Missed : cachekey = {cacheKey}");
 
-            var item = dataRetriever?.Invoke();
+            if (!_cache.StringSet($"{cacheKey}_Lock", 1, TimeSpan.FromMilliseconds(_options.LockMs),When.NotExists))
+            {
+                System.Threading.Thread.Sleep(_options.SleepMs);
+                return Get(cacheKey, dataRetriever, expiration);
+            }
+
+            var item = dataRetriever();
             if (item != null)
             {
                 Set(cacheKey, item, expiration);
+                //remove mutex key
+                _cache.KeyDelete($"{cacheKey}_Lock");
                 return new CacheValue<T>(item, true);
             }
             else
-            {                
+            {
                 return CacheValue<T>.NoValue;
             }
         }
@@ -146,7 +203,7 @@
         /// <param name="dataRetriever">Data retriever.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task<CacheValue<T>> GetAsync<T>(string cacheKey, Func<Task<T>> dataRetriever, TimeSpan expiration) where T : class
+        public async Task<CacheValue<T>> GetAsync<T>(string cacheKey, Func<Task<T>> dataRetriever, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
@@ -168,10 +225,21 @@
             if (_options.EnableLogging)
                 _logger?.LogInformation($"Cache Missed : cachekey = {cacheKey}");
 
-            var item = await dataRetriever?.Invoke();
+            var flag = await _cache.StringSetAsync($"{cacheKey}_Lock", 1, TimeSpan.FromMilliseconds(_options.LockMs), When.NotExists);
+
+            if (!flag)
+            {
+                await Task.Delay(_options.SleepMs);
+                return await GetAsync(cacheKey, dataRetriever, expiration);
+            }
+
+            var item = await dataRetriever();
             if (item != null)
             {
                 await SetAsync(cacheKey, item, expiration);
+
+                //remove mutex key
+                await _cache.KeyDeleteAsync($"{cacheKey}_Lock");
                 return new CacheValue<T>(item, true);
             }
             else
@@ -186,7 +254,7 @@
         /// <returns>The get.</returns>
         /// <param name="cacheKey">Cache key.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public CacheValue<T> Get<T>(string cacheKey)// where T : class
+        public CacheValue<T> Get<T>(string cacheKey)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
@@ -218,7 +286,7 @@
         /// <returns>The async.</returns>
         /// <param name="cacheKey">Cache key.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task<CacheValue<T>> GetAsync<T>(string cacheKey)// where T : class
+        public async Task<CacheValue<T>> GetAsync<T>(string cacheKey)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
@@ -276,7 +344,7 @@
         /// <param name="cacheValue">Cache value.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public void Set<T>(string cacheKey, T cacheValue, TimeSpan expiration)// where T : class
+        public void Set<T>(string cacheKey, T cacheValue, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
@@ -285,7 +353,7 @@
             if (MaxRdSecond > 0)
             {
                 var addSec = new Random().Next(1, MaxRdSecond);
-                expiration.Add(new TimeSpan(0, 0, addSec));
+                expiration = expiration.Add(TimeSpan.FromSeconds(addSec));
             }
 
             _cache.StringSet(
@@ -302,7 +370,7 @@
         /// <param name="cacheValue">Cache value.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task SetAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)// where T : class
+        public async Task SetAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
@@ -311,7 +379,7 @@
             if (MaxRdSecond > 0)
             {
                 var addSec = new Random().Next(1, MaxRdSecond);
-                expiration.Add(new TimeSpan(0, 0, addSec));
+                expiration = expiration.Add(TimeSpan.FromSeconds(addSec));
             }
 
             await _cache.StringSetAsync(
@@ -351,7 +419,7 @@
         /// <param name="cacheValue">Cache value.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public void Refresh<T>(string cacheKey, T cacheValue, TimeSpan expiration)// where T : class
+        public void Refresh<T>(string cacheKey, T cacheValue, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
@@ -369,7 +437,7 @@
         /// <param name="cacheValue">Cache value.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task RefreshAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)// where T : class
+        public async Task RefreshAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
             ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
@@ -431,7 +499,7 @@
             var keys = new List<RedisKey>();
 
             foreach (var server in _servers)
-                keys.AddRange(server.Keys(pattern: pattern));
+                keys.AddRange(server.Keys(pattern: pattern, database: _cache.Database));
 
             return keys.Distinct().ToArray();
 
@@ -481,11 +549,11 @@
         /// <param name="values">Values.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public void SetAll<T>(IDictionary<string, T> values, TimeSpan expiration)// where T : class
+        public void SetAll<T>(IDictionary<string, T> values, TimeSpan expiration)
         {
             ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
             ArgumentCheck.NotNullAndCountGTZero(values, nameof(values));
-            
+
             var batch = _cache.CreateBatch();
 
             foreach (var item in values)
@@ -501,11 +569,11 @@
         /// <param name="values">Values.</param>
         /// <param name="expiration">Expiration.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task SetAllAsync<T>(IDictionary<string, T> values, TimeSpan expiration)// where T : class
+        public async Task SetAllAsync<T>(IDictionary<string, T> values, TimeSpan expiration)
         {
             ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
             ArgumentCheck.NotNullAndCountGTZero(values, nameof(values));
-            
+
             var tasks = new List<Task>();
 
             foreach (var item in values)
@@ -520,7 +588,7 @@
         /// <returns>The all.</returns>
         /// <param name="cacheKeys">Cache keys.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public IDictionary<string, CacheValue<T>> GetAll<T>(IEnumerable<string> cacheKeys)// where T : class
+        public IDictionary<string, CacheValue<T>> GetAll<T>(IEnumerable<string> cacheKeys)
         {
             ArgumentCheck.NotNullAndCountGTZero(cacheKeys, nameof(cacheKeys));
 
@@ -546,7 +614,7 @@
         /// <returns>The all async.</returns>
         /// <param name="cacheKeys">Cache keys.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> cacheKeys)// where T : class
+        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> cacheKeys)
         {
             ArgumentCheck.NotNullAndCountGTZero(cacheKeys, nameof(cacheKeys));
 
@@ -572,7 +640,7 @@
         /// <returns>The by prefix.</returns>
         /// <param name="prefix">Prefix.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public IDictionary<string, CacheValue<T>> GetByPrefix<T>(string prefix)// where T : class
+        public IDictionary<string, CacheValue<T>> GetByPrefix<T>(string prefix)
         {
             ArgumentCheck.NotNullOrWhiteSpace(prefix, nameof(prefix));
 
@@ -601,7 +669,7 @@
         /// <returns>The by prefix async.</returns>
         /// <param name="prefix">Prefix.</param>
         /// <typeparam name="T">The 1st type parameter.</typeparam>
-        public async Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(string prefix)// where T : class
+        public async Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(string prefix)
         {
             ArgumentCheck.NotNullOrWhiteSpace(prefix, nameof(prefix));
 
@@ -658,7 +726,7 @@
         /// <param name="prefix">Prefix.</param>
         public int GetCount(string prefix = "")
         {
-            if(string.IsNullOrWhiteSpace(prefix))
+            if (string.IsNullOrWhiteSpace(prefix))
             {
                 var allCount = 0;
 
@@ -666,9 +734,9 @@
                     allCount += (int)server.DatabaseSize(_cache.Database);
 
                 return allCount;
-            }            
+            }
 
-            return this.SearchRedisKeys(this.HandlePrefix(prefix)).Length;  
+            return this.SearchRedisKeys(this.HandlePrefix(prefix)).Length;
         }
 
         /// <summary>
@@ -702,6 +770,62 @@
             }
 
             await Task.WhenAll(tasks);
+        }
+
+        /// <summary>
+        /// Tries the set.
+        /// </summary>
+        /// <returns><c>true</c>, if set was tryed, <c>false</c> otherwise.</returns>
+        /// <param name="cacheKey">Cache key.</param>
+        /// <param name="cacheValue">Cache value.</param>
+        /// <param name="expiration">Expiration.</param>
+        /// <typeparam name="T">The 1st type parameter.</typeparam>
+        public bool TrySet<T>(string cacheKey, T cacheValue, TimeSpan expiration)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+            ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
+            ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
+
+            if (MaxRdSecond > 0)
+            {
+                var addSec = new Random().Next(1, MaxRdSecond);
+                expiration = expiration.Add(TimeSpan.FromSeconds(addSec));
+            }
+
+            return _cache.StringSet(
+                cacheKey,
+                _serializer.Serialize(cacheValue),
+                expiration,
+                When.NotExists
+                );
+        }
+
+        /// <summary>
+        /// Tries the set async.
+        /// </summary>
+        /// <returns>The set async.</returns>
+        /// <param name="cacheKey">Cache key.</param>
+        /// <param name="cacheValue">Cache value.</param>
+        /// <param name="expiration">Expiration.</param>
+        /// <typeparam name="T">The 1st type parameter.</typeparam>
+        public Task<bool> TrySetAsync<T>(string cacheKey, T cacheValue, TimeSpan expiration)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+            ArgumentCheck.NotNull(cacheValue, nameof(cacheValue));
+            ArgumentCheck.NotNegativeOrZero(expiration, nameof(expiration));
+
+            if (MaxRdSecond > 0)
+            {
+                var addSec = new Random().Next(1, MaxRdSecond);
+                expiration = expiration.Add(TimeSpan.FromSeconds(addSec));
+            }
+
+            return _cache.StringSetAsync(
+                cacheKey,
+                _serializer.Serialize(cacheValue),
+                expiration,
+                When.NotExists
+                );
         }
     }
 }

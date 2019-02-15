@@ -1,10 +1,10 @@
 ﻿namespace EasyCaching.Interceptor.Castle
 {
-    using EasyCaching.Core;
-    using EasyCaching.Core.Internal;
-    using global::Castle.DynamicProxy;
     using System;
     using System.Linq;
+    using EasyCaching.Core;
+    using EasyCaching.Core.Interceptor;
+    using global::Castle.DynamicProxy;
 
     /// <summary>
     /// Easycaching interceptor.
@@ -58,11 +58,9 @@
         /// <param name="invocation">Invocation.</param>
         private void ProceedAble(IInvocation invocation)
         {
-            var serviceMethod = invocation.MethodInvocationTarget ?? invocation.Method;
+            var serviceMethod = invocation.Method ?? invocation.MethodInvocationTarget;
 
-            var attribute = serviceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingAbleAttribute)) as EasyCachingAbleAttribute;
-
-            if (attribute != null)
+            if (serviceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingAbleAttribute)) is EasyCachingAbleAttribute attribute)
             {
                 var cacheKey = _keyGenerator.GetCacheKey(serviceMethod, invocation.Arguments, attribute.CacheKeyPrefix);
 
@@ -94,11 +92,9 @@
         /// <param name="invocation">Invocation.</param>
         private void ProcessPut(IInvocation invocation)
         {
-            var serviceMethod = invocation.MethodInvocationTarget ?? invocation.Method;
+            var serviceMethod = invocation.Method ?? invocation.MethodInvocationTarget;
 
-            var attribute = serviceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingPutAttribute)) as EasyCachingPutAttribute;
-
-            if (attribute != null && invocation.ReturnValue != null)
+            if (serviceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingPutAttribute)) is EasyCachingPutAttribute attribute && invocation.ReturnValue != null)
             {
                 var cacheKey = _keyGenerator.GetCacheKey(serviceMethod, invocation.Arguments, attribute.CacheKeyPrefix);
 
@@ -113,13 +109,11 @@
         /// <param name="isBefore">If set to <c>true</c> is before.</param>
         private void ProcessEvict(IInvocation invocation, bool isBefore)
         {
-            var serviceMethod = invocation.MethodInvocationTarget ?? invocation.Method;
+            var serviceMethod = invocation.Method ?? invocation.MethodInvocationTarget;
 
-            var attribute = serviceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingEvictAttribute)) as EasyCachingEvictAttribute;
-
-            if (attribute != null && attribute.IsBefore == isBefore)
-            {                
-                if(attribute.IsAll)
+            if (serviceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingEvictAttribute)) is EasyCachingEvictAttribute attribute && attribute.IsBefore == isBefore)
+            {
+                if (attribute.IsAll)
                 {
                     //If is all , clear all cached items which cachekey start with the prefix.
                     var cacheKeyPrefix = _keyGenerator.GetCacheKeyPrefix(serviceMethod, attribute.CacheKeyPrefix);
@@ -131,7 +125,7 @@
                     //If not all , just remove the cached item by its cachekey.
                     var cacheKey = _keyGenerator.GetCacheKey(serviceMethod, invocation.Arguments, attribute.CacheKeyPrefix);
 
-                    _cacheProvider.Remove(cacheKey);    
+                    _cacheProvider.Remove(cacheKey);
                 }
             }
         }

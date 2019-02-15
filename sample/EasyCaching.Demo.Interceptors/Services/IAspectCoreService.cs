@@ -1,9 +1,9 @@
 ﻿namespace EasyCaching.Demo.Interceptors.Services
 {
-    using EasyCaching.Core.Internal;
     using System.Threading.Tasks;
-    
-    public interface IAspectCoreService : EasyCaching.Core.Internal.IEasyCaching
+    using EasyCaching.Core.Interceptor;
+
+    public interface IAspectCoreService //: EasyCaching.Core.Internal.IEasyCaching
     {
         [EasyCachingAble(Expiration = 10)]
         string GetCurrentUtcTime();
@@ -16,6 +16,12 @@
 
         [EasyCachingAble(Expiration = 10)]
         Task<string> GetUtcTimeAsync();
+
+        [EasyCachingAble(Expiration = 10)]
+        Task<Demo> GetDemoAsync(int id);
+
+        [EasyCachingAble(Expiration = 10)]
+        Demo GetDemo(int id);
     }
 
     public class AspectCoreService : IAspectCoreService
@@ -30,6 +36,16 @@
             return System.DateTimeOffset.UtcNow.ToString();
         }
 
+        public Demo GetDemo(int id)
+        {
+             return new Demo { Id = id, CreateTime = System.DateTime.Now, Name = "catcher" };
+        }
+
+        public Task<Demo> GetDemoAsync(int id)
+        {
+            return Task.FromResult(new Demo{ Id = id, CreateTime = System.DateTime.Now, Name = "catcher"});
+        }
+
         public async Task<string> GetUtcTimeAsync()
         {
             return await Task.FromResult<string>(System.DateTimeOffset.UtcNow.ToString());
@@ -39,5 +55,14 @@
         {
             return str;
         }
+
+    }
+
+    [System.Serializable]
+    public class Demo
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public System.DateTime CreateTime { get; set; }
     }
 }

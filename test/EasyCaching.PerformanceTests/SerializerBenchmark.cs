@@ -1,9 +1,8 @@
 ﻿namespace EasyCaching.PerformanceTests
 {
     using BenchmarkDotNet.Attributes;
-    using BenchmarkDotNet.Attributes.Columns;
-    using BenchmarkDotNet.Running;
     using EasyCaching.Core;
+    using EasyCaching.Core.Serialization;
     using EasyCaching.Serialization.Json;
     using EasyCaching.Serialization.MessagePack;
     using EasyCaching.Serialization.Protobuf;

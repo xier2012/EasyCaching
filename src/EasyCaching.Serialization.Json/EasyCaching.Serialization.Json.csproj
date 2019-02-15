@@ -6,8 +6,8 @@
     <Owners>Catcher Wong</Owners>
     <Authors>Catcher Wong</Authors>    
     <Version>$(EasyCachingJsonPackageVersion)</Version>
-    <Description>
-      EasyCaching.Serialization.Json based on EasyCaching.Core and Newtonsoft.Json.
+    <Description>      
+      A serialize library based on Newtonsoft.Json
     </Description>
     <PackageTags>Caching,Serialization,Json</PackageTags>
     <PackageProjectUrl>https://github.com/dotnetcore/EasyCaching</PackageProjectUrl>
@@ -27,5 +27,8 @@
   <ItemGroup>  
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />    
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="2.1.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Configurations\" />
   </ItemGroup>
 </Project>

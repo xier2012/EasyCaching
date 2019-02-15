@@ -1,9 +1,12 @@
 ﻿namespace EasyCaching.Demo.Interceptors
 {
+    using EasyCaching.Core;
     using EasyCaching.Demo.Interceptors.Services;
     using EasyCaching.Interceptor.AspectCore;
     using EasyCaching.Interceptor.Castle;
     using EasyCaching.InMemory;
+    using EasyCaching.Redis;
+    using EasyCaching.Serialization.MessagePack;
     using Microsoft.AspNetCore.Builder;
     using Microsoft.AspNetCore.Hosting;
     using Microsoft.AspNetCore.Mvc;
@@ -25,7 +28,15 @@
         {
             services.AddScoped<IAspectCoreService, AspectCoreService>();
 
-            services.AddDefaultInMemoryCache();
+            services.AddEasyCaching(options=> 
+            {
+                options.UseInMemory();
+
+                //options.UseRedis(config =>
+                //{
+                //    config.DBConfig = new RedisDBOptions { Configuration = "localhost" };
+                //});
+            });
 
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
 
@@ -56,11 +67,19 @@
         ////2. Castle
         //public IServiceProvider ConfigureServices(IServiceCollection services)
         //{
-        //    services.AddMvc();
-
         //    services.AddTransient<ICastleService, CastleService>();
 
-        //    services.AddDefaultInMemoryCache();
+        //    services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
+
+        //    services.AddEasyCaching(options =>
+        //    {
+        //        options.UseInMemory();
+
+        //        //options.UseRedis(config =>
+        //        //{
+        //        //    config.DBConfig = new RedisDBOptions { Configuration = "localhost" };
+        //        //});
+        //    });
 
         //    //2.1. all default
         //    return services.ConfigureCastleInterceptor();

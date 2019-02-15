@@ -8,6 +8,9 @@
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.DependencyInjection.Extensions;
     using System;
+    using System.Linq;
+    using System.Reflection;
+    using EasyCaching.Core.Interceptor;
 
     /// <summary>
     /// Aspectcore interceptor service collection extensions.
@@ -27,7 +30,9 @@
 
             return container.Configure(config =>
             {
-                config.Interceptors.AddTyped<EasyCachingInterceptor>(method => typeof(IEasyCaching).IsAssignableFrom(method.DeclaringType));
+                bool all(MethodInfo x) => x.CustomAttributes.Any(data => typeof(EasyCachingInterceptorAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType));               
+
+                config.Interceptors.AddTyped<EasyCachingInterceptor>(all);
             }).Build();                        
         }
                
@@ -47,7 +52,9 @@
 
             return container.Configure(config =>
             {
-                config.Interceptors.AddTyped<EasyCachingInterceptor>(method => typeof(IEasyCaching).IsAssignableFrom(method.DeclaringType));
+                bool all(MethodInfo x) => x.CustomAttributes.Any(data => typeof(EasyCachingInterceptorAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType));
+
+                config.Interceptors.AddTyped<EasyCachingInterceptor>(all);
             }).Build();
         }
 

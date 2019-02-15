@@ -7,6 +7,7 @@
     using EasyCaching.Memcached;
     using EasyCaching.Redis;
     using EasyCaching.SQLite;
+    using EasyCaching.Serialization.MessagePack;
     using Microsoft.AspNetCore.Builder;
     using Microsoft.AspNetCore.Hosting;
     using Microsoft.AspNetCore.Mvc;
@@ -14,6 +15,7 @@
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Logging;
     using System;
+    using EasyCaching.Core.Configurations;
 
     public class Startup
     {
@@ -28,51 +30,44 @@
         {
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
 
-            //1. Important step for using InMemory Cache
-            services.AddDefaultInMemoryCache(x => { x.EnableLogging = true; });
+            //new configuration
+            services.AddEasyCaching(option=> 
+            {
+                //use memory cache
+                option.UseInMemory("default");
 
-            //services.AddDefaultInMemoryCache(Configuration);
+                //use memory cache
+                option.UseInMemory("cus");
 
-            ////2. Important step for using Memcached Cache
-            //services.AddDefaultMemcached(op =>
-            //{
-            //    op.DBConfig.AddServer("127.0.0.1", 11211);
-            //});
+                //use redis cache
+                option.UseRedis(config => 
+                {
+                    config.DBConfig.Endpoints.Add(new ServerEndPoint("127.0.0.1", 6379));
+                }, "redis1")
+                .WithMessagePack()//with messagepack serialization
+                ;
 
-            //services.AddDefaultMemcached(Configuration);
+                //use redis cache
+                option.UseRedis(config => 
+                {
+                    config.DBConfig.Endpoints.Add(new ServerEndPoint("127.0.0.1", 6380));
+                }, "redis2");
 
-            //3. Important step for using Redis Cache
-            //services.AddDefaultRedisCache(option =>
-            //{
-            //    option.DBConfig.Endpoints.Add(new ServerEndPoint("127.0.0.1", 6379));
-            //    option.DBConfig.Password = "";
-            //});
+                ////use sqlite cache
+                //option.UseSQLite(config =>
+                //{
+                //    config.DBConfig = new SQLiteDBOptions { FileName = "my.db" };
+                //});
 
-            //services.AddDefaultRedisCache(Configuration);
+                ////use memcached cached
+                //option.UseMemcached(config => 
+                //{
+                //    config.DBConfig.AddServer("127.0.0.1", 11211);
+                //});
 
-            ////4. Important step for using SQLite Cache
-            //services.AddSQLiteCache(option => 
-            //{
-            //    option.DBConfig = new SQLiteDBOptions { FileName="my.db" };
-            //});
+                //option.UseMemcached(Configuration);
 
-            //services.AddSQLiteCache(Configuration);
-
-            ////5. Important step for using Hybrid Cache
-            ////5.1. Local Cache
-            //services.AddDefaultInMemoryCache(x=>
-            //{
-            //    x.Order = 1;
-            //});
-            ////5.2 Distributed Cache
-            //services.AddDefaultRedisCache(option =>
-            //{
-            //    option.Order = 2;
-            //    option.DBConfig.Endpoints.Add(new ServerEndPoint("127.0.0.1", 6379));
-            //    option.DBConfig.Password = "";
-            //});
-            ////5.3 Hybrid
-            //services.AddDefaultHybridCache();
+            });                      
         }
 
         public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory)
@@ -84,11 +79,8 @@
 
             loggerFactory.AddConsole(Configuration.GetSection("Logging"));
 
-            ////2. Important step for using Memcached Cache
-            //app.UseDefaultMemcached();
-
-            ////4. Important step for using SQLite Cache
-            //app.UseSQLiteCache();
+            // Important step for using Memcached Cache or SQLite Cache
+            app.UseEasyCaching();
 
             app.UseMvc();
         }

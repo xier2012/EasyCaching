@@ -1,18 +1,20 @@
 namespace EasyCaching.UnitTests
 {
-    using EasyCaching.Core.Internal;
-    using EasyCaching.UnitTests.Infrastructure;
-    using EasyCaching.Interceptor.Castle;
-    using EasyCaching.InMemory;
     using System;
-    using System.Threading;
-    using Xunit;
-    using Microsoft.Extensions.DependencyInjection;
-    using EasyCaching.Core;
-    using Autofac;
+    using System.Collections.Generic;
+    using System.Linq;
     using System.Reflection;
-    using Autofac.Extras.DynamicProxy;
+    using System.Threading;
     using System.Threading.Tasks;
+    using Autofac;
+    using Autofac.Extras.DynamicProxy;
+    using EasyCaching.Core;
+    using EasyCaching.Core.Interceptor;
+    using EasyCaching.InMemory;
+    using EasyCaching.Interceptor.Castle;
+    using EasyCaching.UnitTests.Infrastructure;
+    using Microsoft.Extensions.DependencyInjection;
+    using Xunit;
 
     public abstract class BaseCastleInterceptorTest
     {
@@ -179,7 +181,10 @@ namespace EasyCaching.UnitTests
         {
             IServiceCollection services = new ServiceCollection();
             services.AddTransient<ICastleExampleService, CastleExampleService>();
-            services.AddDefaultInMemoryCache();
+            services.AddDefaultInMemoryCache(x=> 
+            {
+                x.MaxRdSecond = 0;
+            });
             IServiceProvider serviceProvider = services.ConfigureCastleInterceptor();
 
             _cachingProvider = serviceProvider.GetService<IEasyCachingProvider>();
@@ -196,7 +201,10 @@ namespace EasyCaching.UnitTests
         {
             IServiceCollection services = new ServiceCollection();
             services.AddTransient<IAspectCoreExampleService, AspectCoreExampleService>();
-            services.AddDefaultInMemoryCache();
+            services.AddDefaultInMemoryCache(x =>
+            {
+                x.MaxRdSecond = 0;
+            });
 
             Action<ContainerBuilder> action = x =>
             {
@@ -227,7 +235,10 @@ namespace EasyCaching.UnitTests
         {
             IServiceCollection services = new ServiceCollection();
             services.AddTransient<IAspectCoreExampleService, AspectCoreExampleService>();
-            services.AddDefaultInMemoryCache();
+            services.AddDefaultInMemoryCache(x =>
+            {
+                x.MaxRdSecond = 0;
+            });
 
             Action<ContainerBuilder> action = x =>
             {
@@ -236,12 +247,40 @@ namespace EasyCaching.UnitTests
                 var assembly = Assembly.GetExecutingAssembly();
                 x.RegisterType<EasyCachingInterceptor>();
 
-                x.RegisterAssemblyTypes(assembly)
-                    .Where(type => typeof(IEasyCaching).IsAssignableFrom(type) && !type.GetTypeInfo().IsAbstract)
-                    .AsImplementedInterfaces()
-                    .InstancePerLifetimeScope()
-                    .EnableInterfaceInterceptors()
-                    .InterceptedBy(typeof(EasyCachingInterceptor));
+                //neet to improve
+                var iTypes = assembly.GetTypes().Where(t => t.IsInterface && t.GetMethods().Any
+                            (y => y.CustomAttributes.Any(data =>
+                               typeof(EasyCachingAbleAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
+                             || typeof(EasyCachingPutAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
+                             || typeof(EasyCachingEvictAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
+                              ))).ToList();
+
+                var implTypes = new List<Type>();
+                foreach (var item in iTypes)
+                {
+                    implTypes.AddRange(assembly.GetTypes().Where(t => item.GetTypeInfo().IsAssignableFrom(t) && t.IsClass));
+                }
+
+                foreach (var item in implTypes)
+                {
+                    x.RegisterType(item)
+                        .As(item.GetInterfaces())
+                        .InstancePerLifetimeScope()
+                        .EnableInterfaceInterceptors()
+                        .InterceptedBy(typeof(EasyCachingInterceptor));
+                }
+
+                //x.RegisterAssemblyTypes(assembly)
+                //.Where(type => type.GetMethods().Any(y => y.CustomAttributes.Any
+                //      (data =>
+                //        typeof(EasyCachingAbleAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
+                //      || typeof(EasyCachingPutAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
+                //      || typeof(EasyCachingEvictAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
+                //      )))
+                //.AsImplementedInterfaces()
+                //.InstancePerLifetimeScope()
+                //.EnableInterfaceInterceptors()
+                //.InterceptedBy(typeof(EasyCachingInterceptor));
             };
 
             IServiceProvider serviceProvider = services.ConfigureCastleInterceptor(action, true);

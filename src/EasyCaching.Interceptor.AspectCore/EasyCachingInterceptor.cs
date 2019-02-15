@@ -1,12 +1,14 @@
 ﻿namespace EasyCaching.Interceptor.AspectCore
 {
+    using System;
+    using System.Collections.Concurrent;
+    using System.Linq;
+    using System.Reflection;
+    using System.Threading.Tasks;
     using EasyCaching.Core;
-    using EasyCaching.Core.Internal;
+    using EasyCaching.Core.Interceptor;
     using global::AspectCore.DynamicProxy;
     using global::AspectCore.Injector;
-    using System;
-    using System.Linq;
-    using System.Threading.Tasks;
 
     /// <summary>
     /// Easy caching interceptor.
@@ -26,6 +28,12 @@
         /// <value>The key generator.</value>
         [FromContainer]
         public IEasyCachingKeyGenerator KeyGenerator { get; set; }
+
+        /// <summary>
+        /// The typeof task result method.
+        /// </summary>
+        private static readonly ConcurrentDictionary<Type, MethodInfo>
+                    TypeofTaskResultMethod = new ConcurrentDictionary<Type, MethodInfo>();
 
         /// <summary>
         /// Invoke the specified context and next.
@@ -56,24 +64,50 @@
         /// <param name="next">Next.</param>
         private async Task ProceedAbleAsync(AspectContext context, AspectDelegate next)
         {
-            var attribute = context.ServiceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingAbleAttribute)) as EasyCachingAbleAttribute;
-
-            if (attribute != null)
+            if (context.ServiceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingAbleAttribute)) is EasyCachingAbleAttribute attribute)
             {
                 var cacheKey = KeyGenerator.GetCacheKey(context.ServiceMethod, context.Parameters, attribute.CacheKeyPrefix);
                 var cacheValue = await CacheProvider.GetAsync<object>(cacheKey);
 
+                var returnType = context.IsAsync()
+                        ? context.ServiceMethod.ReturnType.GetGenericArguments().First()
+                        : context.ServiceMethod.ReturnType;
+
                 if (cacheValue.HasValue)
                 {
-                    context.ReturnValue = cacheValue.Value;
+                    if (context.IsAsync())
+                    {
+                        //#1
+                        //dynamic member = context.ServiceMethod.ReturnType.GetMember("Result")[0];
+                        //dynamic temp = System.Convert.ChangeType(cacheValue.Value, member.PropertyType);
+                        //context.ReturnValue = System.Convert.ChangeType(Task.FromResult(temp), context.ServiceMethod.ReturnType);
+
+                        //#2                                               
+                        context.ReturnValue =
+                            TypeofTaskResultMethod.GetOrAdd(returnType, t => typeof(Task).GetMethods().First(p => p.Name == "FromResult" && p.ContainsGenericParameters).MakeGenericMethod(returnType)).Invoke(null, new object[] { cacheValue.Value });
+                    }
+                    else
+                    {
+                        //context.ReturnValue = System.Convert.ChangeType(cacheValue.Value, context.ServiceMethod.ReturnType);
+                        context.ReturnValue = cacheValue.Value;
+                    }
                 }
                 else
                 {
                     // Invoke the method if we don't have a cache hit
                     await next(context);
 
-                    if (!string.IsNullOrWhiteSpace(cacheKey) && context.ReturnValue != null)
+                    if (context.IsAsync())
+                    {
+                        //get the result
+                        var returnValue = await context.UnwrapAsyncReturnValue();
+
+                        await CacheProvider.SetAsync(cacheKey, returnValue, TimeSpan.FromSeconds(attribute.Expiration));
+                    }
+                    else
+                    {
                         await CacheProvider.SetAsync(cacheKey, context.ReturnValue, TimeSpan.FromSeconds(attribute.Expiration));
+                    }
                 }
             }
             else
@@ -90,13 +124,21 @@
         /// <param name="context">Context.</param>
         private async Task ProcessPutAsync(AspectContext context)
         {
-            var attribute = context.ServiceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingPutAttribute)) as EasyCachingPutAttribute;
-
-            if (attribute != null && context.ReturnValue != null)
+            if (context.ServiceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingPutAttribute)) is EasyCachingPutAttribute attribute && context.ReturnValue != null)
             {
-                var cacheKey = KeyGenerator.GetCacheKey(context.ServiceMethod, context.Parameters,attribute.CacheKeyPrefix);
+                var cacheKey = KeyGenerator.GetCacheKey(context.ServiceMethod, context.Parameters, attribute.CacheKeyPrefix);
 
-                await CacheProvider.SetAsync(cacheKey, context.ReturnValue, TimeSpan.FromSeconds(attribute.Expiration));
+                if (context.IsAsync())
+                {
+                    //get the result
+                    var returnValue = await context.UnwrapAsyncReturnValue();
+
+                    await CacheProvider.SetAsync(cacheKey, returnValue, TimeSpan.FromSeconds(attribute.Expiration));
+                }
+                else
+                {
+                    await CacheProvider.SetAsync(cacheKey, context.ReturnValue, TimeSpan.FromSeconds(attribute.Expiration));
+                }
             }
         }
 
@@ -108,11 +150,9 @@
         /// <param name="isBefore">If set to <c>true</c> is before.</param>
         private async Task ProcessEvictAsync(AspectContext context, bool isBefore)
         {
-            var attribute = context.ServiceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingEvictAttribute)) as EasyCachingEvictAttribute;
-
-            if (attribute != null && attribute.IsBefore == isBefore)
-            {                
-                if(attribute.IsAll)
+            if (context.ServiceMethod.GetCustomAttributes(true).FirstOrDefault(x => x.GetType() == typeof(EasyCachingEvictAttribute)) is EasyCachingEvictAttribute attribute && attribute.IsBefore == isBefore)
+            {
+                if (attribute.IsAll)
                 {
                     //If is all , clear all cached items which cachekey start with the prefix.
                     var cachePrefix = KeyGenerator.GetCacheKeyPrefix(context.ServiceMethod, attribute.CacheKeyPrefix);
@@ -124,7 +164,7 @@
                     //If not all , just remove the cached item by its cachekey.
                     var cacheKey = KeyGenerator.GetCacheKey(context.ServiceMethod, context.Parameters, attribute.CacheKeyPrefix);
 
-                    await CacheProvider.RemoveAsync(cacheKey);    
+                    await CacheProvider.RemoveAsync(cacheKey);
                 }
             }
         }

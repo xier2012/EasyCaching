@@ -1,15 +1,15 @@
 namespace EasyCaching.UnitTests
 {
-    using AspectCore.Configuration;
-    using AspectCore.Injector;
+    using System;
+    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
     using EasyCaching.Core;
+    using EasyCaching.Core.Interceptor;
     using EasyCaching.InMemory;
     using EasyCaching.Interceptor.AspectCore;
     using EasyCaching.UnitTests.Infrastructure;
     using Microsoft.Extensions.DependencyInjection;
-    using System;
-    using System.Threading;
-    using System.Threading.Tasks;
     using Xunit;
 
     public abstract class BaseAspectCoreInterceptorTest
@@ -139,10 +139,10 @@ namespace EasyCaching.UnitTests
 
             var key = _keyGenerator.GetCacheKey(method, new object[] { 1, "123" }, "AspectCoreExample");
 
-            var value = _cachingProvider.Get<Task<string>>(key);
+            var value = _cachingProvider.Get<string>(key);
 
             Assert.True(value.HasValue);
-            Assert.Equal(str, value.Value.Result);
+            Assert.Equal(str, value.Value);
         }
 
         [Fact]
@@ -167,6 +167,18 @@ namespace EasyCaching.UnitTests
 
             Assert.False(after.HasValue);
         }
+
+        [Fact]
+        protected virtual async Task Issues74_Interceptor_Able_IEnumerable_Test()
+        {
+            var list1 = await _service.AbleIEnumerableTest();
+
+            Thread.Sleep(1);
+
+            var list2 = await _service.AbleIEnumerableTest();
+
+            Assert.Equal(list1.First().Prop, list2.First().Prop);
+        }
     }
 
     public class AspectCoreInterceptorTest : BaseAspectCoreInterceptorTest
@@ -175,7 +187,10 @@ namespace EasyCaching.UnitTests
         {
             IServiceCollection services = new ServiceCollection();
             services.AddTransient<IAspectCoreExampleService, AspectCoreExampleService>();
-            services.AddDefaultInMemoryCache();
+            services.AddDefaultInMemoryCache(x =>
+            {
+                x.MaxRdSecond = 0;
+            });
             IServiceProvider serviceProvider = services.ConfigureAspectCoreInterceptor();
 
             _cachingProvider = serviceProvider.GetService<IEasyCachingProvider>();

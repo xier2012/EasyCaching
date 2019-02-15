@@ -6,10 +6,10 @@
     <Owners>Catcher Wong</Owners>
     <Authors>Catcher Wong</Authors>    
     <Version>$(EasyCachingSQLitePackageVersion)</Version>
-    <Description>
-      EasyCaching.SQLite based on EasyCaching.Core and Microsoft.Data.SQLite
+    <Description>      
+      A simple local caching provider based on Microsoft.Data.SQLite
     </Description>
-    <PackageTags>Caching,Cache,SQLite</PackageTags>
+    <PackageTags>SQLite,LocalCache,Caching,Cache,InMemory,Persisted</PackageTags>
     <PackageProjectUrl>https://github.com/dotnetcore/EasyCaching</PackageProjectUrl>
     <PackageLicenseUrl>https://github.com/dotnetcore/EasyCaching/blob/master/LICENSE</PackageLicenseUrl>
     <RepositoryUrl>https://github.com/dotnetcore/EasyCaching</RepositoryUrl>
@@ -30,5 +30,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.1.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="2.1.1" />
     <PackageReference Include="Microsoft.CSharp" Version="4.5.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Configurations\" />
   </ItemGroup>
 </Project>
