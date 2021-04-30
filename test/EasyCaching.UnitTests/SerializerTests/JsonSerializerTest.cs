@@ -10,11 +10,7 @@
     {
         public JsonSerializerTest()
         {
-            var options = A.Fake<IOptions<EasyCachingJsonSerializerOptions>>();
-
-            A.CallTo(() => options.Value).Returns(new EasyCachingJsonSerializerOptions());
-
-            _serializer = new DefaultJsonSerializer(options);
+            _serializer = new DefaultJsonSerializer("json", new JsonSerializerSettings());
         }
 
         [Fact]
@@ -31,14 +27,10 @@
         [Fact]
         public void ReferenceLoopHandling_Test_Should_Succeed()
         {
-            var options = A.Fake<IOptions<EasyCachingJsonSerializerOptions>>();
-
-            A.CallTo(() => options.Value).Returns(new EasyCachingJsonSerializerOptions()
+            var serializer = new DefaultJsonSerializer("json", new JsonSerializerSettings()
             {
                 ReferenceLoopHandling = ReferenceLoopHandling.Ignore
             });
-
-            var  serializer = new DefaultJsonSerializer(options);
 
             Employee joe = new Employee { Name = "Joe User" };
             Employee mike = new Employee { Name = "Mike Manager" };
@@ -62,16 +54,12 @@
         [Fact]
         public void NullValueHandling_Test_Should_Succeed()
         {
-            var options = A.Fake<IOptions<EasyCachingJsonSerializerOptions>>();
-
-            A.CallTo(() => options.Value).Returns(new EasyCachingJsonSerializerOptions()
+            var serializer = new DefaultJsonSerializer("json", new JsonSerializerSettings()
             {
                 NullValueHandling = NullValueHandling.Ignore
             });
 
-            var  serializer = new DefaultJsonSerializer(options);
-
-            Employee joe = new Employee { Name = "Joe User" };           
+            Employee joe = new Employee { Name = "Joe User" };
 
             var joe_byte = serializer.Serialize(joe);
             var joe_obj = serializer.Deserialize<Employee>(joe_byte);

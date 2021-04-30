@@ -2,9 +2,9 @@
 
 HybridCachingProvider will combine local caching and distributed caching together.
 
-And the most important problem is to keep the newest local cached value.
+The most important problem that this caching provider solves is that it keeps the newest local cached value.
 
-When we modify a cached value, the provider will send a message to `EasyCaching Bus` so that we can notify other Apps to remove the old value.
+When we modify a cached value, the provider will send a message to `EasyCaching Bus` so that it can notify other Apps to remove the old value.
 
 The following image shows how it runs.
 
@@ -27,11 +27,11 @@ Install-Package EasyCaching.Bus.Redis
 public class Startup
 {
     //...
-    
+
     public void ConfigureServices(IServiceCollection services)
     {
         services.AddMvc();
-        
+
         services.AddEasyCaching(option =>
         {
             // local
@@ -44,10 +44,15 @@ public class Startup
             }, "myredis");
 
             // combine local and distributed
-            option.UseHybrid(config => 
+            option.UseHybrid(config =>
             {
                 config.TopicName = "test-topic";
                 config.EnableLogging = false;
+
+                // specify the local cache provider name after v0.5.4
+                config.LocalCacheProviderName = "m1";
+                // specify the distributed cache provider name after v0.5.4
+                config.DistributedCacheProviderName = "myredis";
             })
             // use redis bus
             .WithRedisBus(busConf => 
@@ -61,7 +66,7 @@ public class Startup
 
 ### 3. Call `IHybridCachingProvider`
 
-The following code show how to use EasyCachingProvider in ASP.NET Core Web API.
+Following code shows how to use EasyCachingProvider in ASP.NET Core Web API.
 
 ```csharp
 [Route("api/[controller]")]
@@ -79,7 +84,7 @@ public class ValuesController : Controller
     {
         //Set
         _provider.Set("demo", "123", TimeSpan.FromMinutes(1));
-        
+
         //others
         //...
     }

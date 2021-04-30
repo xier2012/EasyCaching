@@ -3,12 +3,12 @@
     using EasyCaching.Core;
     using EasyCaching.Core.Configurations;
     using EasyCaching.Core.Serialization;
-    using Microsoft.AspNetCore.Builder;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.DependencyInjection.Extensions;
     using Microsoft.Extensions.Logging;
     using Microsoft.Extensions.Options;
     using System;
+    using System.Linq;
 
     /// <summary>
     /// Redis options extension.
@@ -50,7 +50,7 @@
 
             services.Configure(_name, _configure);
 
-            services.AddSingleton<IEasyCachingProviderFactory, DefaultEasyCachingProviderFactory>();
+            services.TryAddSingleton<IEasyCachingProviderFactory, DefaultEasyCachingProviderFactory>();
 
             services.AddSingleton<EasyCachingCSRedisClient>(x =>
             {
@@ -59,6 +59,14 @@
 
                 var conns = options.DBConfig.ConnectionStrings;
                 var rule = options.DBConfig.NodeRule;
+                var sentinels = options.DBConfig.Sentinels;
+                var readOnly = options.DBConfig.ReadOnly;
+
+                if (sentinels != null && sentinels.Any())
+                {
+                    var redisClient = new EasyCachingCSRedisClient(_name, conns[0], sentinels.ToArray(), readOnly);
+                    return redisClient;
+                }
 
                 if (conns.Count == 1)
                 {
@@ -75,23 +83,15 @@
             Func<IServiceProvider, DefaultCSRedisCachingProvider> createFactory = x =>
             {
                 var clients = x.GetServices<EasyCachingCSRedisClient>();
-                var serializer = x.GetRequiredService<IEasyCachingSerializer>();
-                var options = x.GetRequiredService<IOptionsMonitor<RedisOptions>>();
+                var serializers = x.GetServices<IEasyCachingSerializer>();
+                var optionsMon = x.GetRequiredService<IOptionsMonitor<RedisOptions>>();
+                var options = optionsMon.Get(_name);
                 var factory = x.GetService<ILoggerFactory>();
-                return new DefaultCSRedisCachingProvider(_name, clients, serializer, options, factory);
+                return new DefaultCSRedisCachingProvider(_name, clients, serializers, options, factory);
             };
 
             services.AddSingleton<IEasyCachingProvider, DefaultCSRedisCachingProvider>(createFactory);
             services.AddSingleton<IRedisCachingProvider, DefaultCSRedisCachingProvider>(createFactory);
-        }
-
-        /// <summary>
-        /// Withs the services.
-        /// </summary>
-        /// <param name="services">Services.</param>
-        public void WithServices(IApplicationBuilder services)
-        {
-            // Method intentionally left empty.
         }
     }
 }

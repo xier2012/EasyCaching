@@ -1,19 +1,13 @@
 ﻿namespace EasyCaching.ResponseCaching
 {
     using EasyCaching.Core;
-    using EasyCaching.Core.Internal;
-    using Microsoft.AspNetCore.Http;
-    using Microsoft.AspNetCore.ResponseCaching.Internal;
-    using Microsoft.Extensions.Primitives;
     using System;
-    using System.IO;
-    using System.Linq;
     using System.Threading.Tasks;
 
     /// <summary>
     /// EasyCaching response cache.
     /// </summary>
-    public class EasyCachingResponseCache : IResponseCache
+    internal class EasyCachingResponseCache : IResponseCache
     {
         /// <summary>
         /// The provider.
@@ -23,13 +17,14 @@
         /// <summary>
         /// Initializes a new instance of the <see cref="T:EasyCaching.ResponseCaching.EasyCachingResponseCache"/> class.
         /// </summary>
-        /// <param name="provider">Provider.</param>
-        public EasyCachingResponseCache(
-            IEasyCachingProvider provider)
+        /// <param name="name">Provider Name</param>
+        /// <param name="providerFactory">Provider factory</param>
+        internal EasyCachingResponseCache(string name,
+            IEasyCachingProviderFactory providerFactory)
         {
-            ArgumentCheck.NotNull(provider, nameof(provider));
+            ArgumentCheck.NotNull(providerFactory, nameof(providerFactory));
 
-            _provider = provider;
+            _provider = providerFactory.GetCachingProvider(name);
         }
 
         /// <summary>
@@ -39,7 +34,7 @@
         /// <param name="key">Key.</param>
         public IResponseCacheEntry Get(string key)
         {
-            var entry = _provider.Get<IResponseCacheEntry>(key);
+            var entry = _provider.Get<object>(key);
 
             if (entry.HasValue)
             {
@@ -49,8 +44,8 @@
                     {
                         Created = val.Created,
                         StatusCode = val.StatusCode,
-                        Headers = new HeaderDictionary(val.Headers.ToDictionary(x => x.Key, x => new StringValues(x.Value))),
-                        Body = new MemoryStream(val.Body)
+                        Headers = val.Headers,
+                        Body = new SegmentReadStream(val.BodySegments, val.BodyLength)
                     };
                 }
             }
@@ -65,7 +60,7 @@
         /// <param name="key">Key.</param>
         public async Task<IResponseCacheEntry> GetAsync(string key)
         {
-            var entry = await _provider.GetAsync<IResponseCacheEntry>(key);
+            var entry = await _provider.GetAsync<object>(key);
 
             if (entry.HasValue)
             {
@@ -75,8 +70,8 @@
                     {
                         Created = val.Created,
                         StatusCode = val.StatusCode,
-                        Headers = new HeaderDictionary(val.Headers.ToDictionary(x => x.Key, x => new StringValues(x.Value))),
-                        Body = new MemoryStream(val.Body)
+                        Headers = val.Headers,
+                        Body = new SegmentReadStream(val.BodySegments, val.BodyLength)
                     };
                 }
             }
@@ -95,14 +90,18 @@
         {
             if (entry is CachedResponse cachedResponse)
             {
+                var segmentStream = new SegmentWriteStream(StreamUtilities.BodySegmentSize);
+                cachedResponse.Body.CopyTo(segmentStream);
+
                 _provider.Set(
                     key,
                     new EasyCachingResponse
                     {
                         Created = cachedResponse.Created,
                         StatusCode = cachedResponse.StatusCode,
-                        Headers = cachedResponse.Headers.ToDictionary(x => x.Key, x => x.Value.ToArray()),
-                        Body = this.GetBytes(cachedResponse.Body)
+                        Headers = cachedResponse.Headers,
+                        BodySegments = segmentStream.GetSegments(),
+                        BodyLength = segmentStream.Length
                     },
                     validFor);
             }
@@ -126,14 +125,18 @@
         {
             if (entry is CachedResponse cachedResponse)
             {
+                var segmentStream = new SegmentWriteStream(StreamUtilities.BodySegmentSize);
+                cachedResponse.Body.CopyTo(segmentStream);
+
                 await _provider.SetAsync(
                     key,
                     new EasyCachingResponse
                     {
                         Created = cachedResponse.Created,
                         StatusCode = cachedResponse.StatusCode,
-                        Headers = cachedResponse.Headers.ToDictionary(x => x.Key, x => x.Value.ToArray()),
-                        Body = this.GetBytes(cachedResponse.Body)
+                        Headers = cachedResponse.Headers,
+                        BodySegments = segmentStream.GetSegments(),
+                        BodyLength = segmentStream.Length
                     },
                     validFor);
             }
@@ -144,28 +147,6 @@
                     entry,
                     validFor);
             }
-        }
-
-        /// <summary>
-        /// Gets the bytes.
-        /// </summary>
-        /// <returns>The bytes.</returns>
-        /// <param name="stream">Stream.</param>
-        private byte[] GetBytes(Stream stream)
-        {
-            int count = (int)stream.Length;
-            long oldPosition = stream.Position;
-            stream.Position = 0;
-            byte[] body = new byte[count];
-
-            //for HEAD method
-            if (count > 0)
-            {
-                stream.Read(body, 0, count);
-                stream.Position = oldPosition;
-            }
-
-            return body;
         }
     }
 }

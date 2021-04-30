@@ -43,6 +43,15 @@
             return len;
         }
 
+        public double ZIncrBy(string cacheKey, string field, double val = 1)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+            ArgumentCheck.NotNullOrWhiteSpace(field, nameof(field));
+
+            var value = _cache.SortedSetIncrement(cacheKey, field, val);
+            return value;
+        }
+
         public long ZLexCount(string cacheKey, string min, string max)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
@@ -57,7 +66,7 @@
 
             var list = new List<T>();
 
-            var bytes = _cache.SortedSetRangeByValue(cacheKey, start, stop);
+            var bytes = _cache.SortedSetRangeByRank(cacheKey, start, stop);
 
             foreach (var item in bytes)
             {
@@ -139,6 +148,15 @@
             return len;
         }
 
+        public async Task<double> ZIncrByAsync(string cacheKey, string field, double val = 1)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+            ArgumentCheck.NotNullOrWhiteSpace(field, nameof(field));
+
+            var value = await _cache.SortedSetIncrementAsync(cacheKey, field, val);
+            return value;
+        }
+
         public async Task<long> ZLexCountAsync(string cacheKey, string min, string max)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
@@ -153,7 +171,7 @@
 
             var list = new List<T>();
 
-            var bytes = await _cache.SortedSetRangeByValueAsync(cacheKey, start, stop);
+            var bytes = await _cache.SortedSetRangeByRankAsync(cacheKey, start, stop);
 
             foreach (var item in bytes)
             {

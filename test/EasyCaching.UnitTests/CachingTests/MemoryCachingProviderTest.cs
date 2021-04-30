@@ -1,3 +1,5 @@
+using EasyCaching.Core.Configurations;
+
 namespace EasyCaching.UnitTests
 {
     using EasyCaching.Core;
@@ -8,6 +10,7 @@ namespace EasyCaching.UnitTests
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
+    using System.Reflection;
     using System.Threading.Tasks;
     using Xunit;
 
@@ -15,18 +18,25 @@ namespace EasyCaching.UnitTests
     {
         public MemoryCachingProviderTest()
         {
-            IServiceCollection services = new ServiceCollection();
-            services.AddDefaultInMemoryCache(x=> 
-            {
-                x.MaxRdSecond = 0;
-            });
-            IServiceProvider serviceProvider = services.BuildServiceProvider();
-            _provider = serviceProvider.GetService<IEasyCachingProvider>();
             _defaultTs = TimeSpan.FromSeconds(30);
         }
 
+        protected override IEasyCachingProvider CreateCachingProvider(Action<BaseProviderOptions> additionalSetup)
+        {
+            IServiceCollection services = new ServiceCollection();
+            services.AddEasyCaching(x => x
+                .UseInMemory(options =>
+                {
+                    options.MaxRdSecond = 0;
+                    additionalSetup(options);
+                })
+            );
+            IServiceProvider serviceProvider = services.BuildServiceProvider();
+            return serviceProvider.GetService<IEasyCachingProvider>();;
+        }
+
         [Fact]
-        public void Deault_MaxRdSecond_Should_Be_0()
+        public void Default_MaxRdSecond_Should_Be_0()
         {
             Assert.Equal(0, _provider.MaxRdSecond);
         }
@@ -43,7 +53,6 @@ namespace EasyCaching.UnitTests
             });
 
             Assert.Equal(1, list.Count(x => x));
-
         }
 
         [Fact]
@@ -57,15 +66,60 @@ namespace EasyCaching.UnitTests
 
             Assert.False(flag);
         }
-    }
 
+        [Fact]
+        public void Issues105_StackOverflowException_Test()
+        {
+            var cacheKey = Guid.NewGuid().ToString();
+
+            var cacheValue = new Dictionary<string, IList<MySettingForCaching>>()
+            {
+                { "ss", new List<MySettingForCaching>{ new MySettingForCaching { Name = "aa" } } }
+            };
+
+            // without data retriever
+            // _provider.Set(cacheKey, cacheValue, TimeSpan.FromMilliseconds(200));
+
+            // with data retriever
+            var res = _provider.Get(cacheKey, () =>
+            {
+                return cacheValue;
+            }, _defaultTs);
+
+            var first = res.Value.First();
+
+            Assert.Equal("ss", first.Key);
+            Assert.Equal(1, first.Value.Count);
+        }
+
+        [Fact]
+        public void Issues150_DeepClone_Object_Test()
+        {
+            var cacheKey = Guid.NewGuid().ToString();
+
+            var cacheValue = new MySettingForCaching { Name = "catcherwong" } ;
+
+            _provider.Set(cacheKey, cacheValue, _defaultTs);
+
+            var res = _provider.Get<MySettingForCaching>(cacheKey);
+
+            res.Value.Name = "kobe";
+
+            var res2 = _provider.Get<MySettingForCaching>(cacheKey);
+
+            Assert.Equal("catcherwong", res2.Value.Name);
+        }      
+    }
     public class MemoryCachingProviderWithFactoryTest : BaseCachingProviderWithFactoryTest
     {
         public MemoryCachingProviderWithFactoryTest()
         {
             IServiceCollection services = new ServiceCollection();
-            services.AddDefaultInMemoryCacheWithFactory();
-            services.AddDefaultInMemoryCacheWithFactory(SECOND_PROVIDER_NAME);
+            services.AddEasyCaching(x =>
+            {
+                x.UseInMemory();
+                x.UseInMemory(SECOND_PROVIDER_NAME);
+            });
             IServiceProvider serviceProvider = services.BuildServiceProvider();
             var factory = serviceProvider.GetService<IEasyCachingProviderFactory>();
             _provider = factory.GetCachingProvider(EasyCachingConstValue.DefaultInMemoryName);
@@ -73,43 +127,6 @@ namespace EasyCaching.UnitTests
             _defaultTs = TimeSpan.FromSeconds(30);
         }
 
-        [Fact]
-        public void GetByPrefix_Should_Succeed()
-        {
-            _provider.RemoveAll(new List<string> { "getbyprefix:key:1", "getbyprefix:key:2" });
-            var dict = TestHelpers.GetMultiDict("getbyprefix:");
-
-            _provider.SetAll(dict, _defaultTs);
-
-            string prefix = "getbyprefix:key:";
-
-            var res = _provider.GetByPrefix<string>(prefix);
-
-            Assert.Equal(2, res.Count);
-            Assert.Contains($"{EasyCachingConstValue.DefaultInMemoryName}-getbyprefix:key:1", res.Select(x => x.Key));
-            Assert.Contains($"{EasyCachingConstValue.DefaultInMemoryName}-getbyprefix:key:2", res.Select(x => x.Key));
-            Assert.Equal("value1", res.Where(x => x.Key == $"{EasyCachingConstValue.DefaultInMemoryName}-getbyprefix:key:1").Select(x => x.Value).FirstOrDefault().Value);
-            Assert.Equal("value2", res.Where(x => x.Key == $"{EasyCachingConstValue.DefaultInMemoryName}-getbyprefix:key:2").Select(x => x.Value).FirstOrDefault().Value);
-        }
-
-        [Fact]
-        public async Task GetByPrefixAsync_Should_Succeed()
-        {
-            _provider.RemoveAll(new List<string> { "getbyprefixasync:key:1", "getbyprefixasync:key:2" });
-            var dict = TestHelpers.GetMultiDict("getbyprefixasync:");
-
-            _provider.SetAll(dict, _defaultTs);
-
-            string prefix = "getbyprefixasync:key:";
-
-            var res = await _provider.GetByPrefixAsync<string>(prefix);
-
-            Assert.Equal(2, res.Count);
-            Assert.Contains($"{EasyCachingConstValue.DefaultInMemoryName}-getbyprefixasync:key:1", res.Select(x => x.Key));
-            Assert.Contains($"{EasyCachingConstValue.DefaultInMemoryName}-getbyprefixasync:key:2", res.Select(x => x.Key));
-            Assert.Equal("value1", res.Where(x => x.Key == $"{EasyCachingConstValue.DefaultInMemoryName}-getbyprefixasync:key:1").Select(x => x.Value).FirstOrDefault().Value);
-            Assert.Equal("value2", res.Where(x => x.Key == $"{EasyCachingConstValue.DefaultInMemoryName}-getbyprefixasync:key:2").Select(x => x.Value).FirstOrDefault().Value);
-        }
     }
 
     public class MemoryCachingProviderUseEasyCachingTest : BaseUsingEasyCachingTest
@@ -166,20 +183,8 @@ namespace EasyCaching.UnitTests
         public MemoryCachingProviderUseEasyCachingWithConfigTest()
         {
             IServiceCollection services = new ServiceCollection();
-
-            var appsettings = @"
-{
-    'easycaching': {
-        'inmemory': {
-            'CachingProviderType': 1,
-            'MaxRdSecond': 600,
-            'Order': 99,
-            'dbconfig': {      
-                'SizeLimit' :  50
-            }
-        }
-    }
-}";
+            
+            var appsettings = "{ \"easycaching\": { \"inmemory\": { \"MaxRdSecond\": 600, \"dbconfig\": {       \"SizeLimit\" :  50 } } } }";
             var path = TestHelpers.CreateTempFile(appsettings);
             var directory = Path.GetDirectoryName(path);
             var fileName = Path.GetFileName(path);
@@ -189,10 +194,7 @@ namespace EasyCaching.UnitTests
             configurationBuilder.AddJsonFile(fileName);
             var config = configurationBuilder.Build();
 
-            services.AddEasyCaching(option =>
-            {
-                option.UseInMemory(config, "mName");
-            });
+            services.AddEasyCaching(option => { option.UseInMemory(config, "mName"); });
 
             IServiceProvider serviceProvider = services.BuildServiceProvider();
             _provider = serviceProvider.GetService<IEasyCachingProvider>();
@@ -203,8 +205,130 @@ namespace EasyCaching.UnitTests
         public void Provider_Information_Should_Be_Correct()
         {
             Assert.Equal(600, _provider.MaxRdSecond);
-            Assert.Equal(99, _provider.Order);
+            //Assert.Equal(99, _provider.Order);
             Assert.Equal("mName", _provider.Name);
         }
+    }
+
+    public class MemoryCachingProviderDeepCloneTest
+    {
+        private readonly TimeSpan _defaultTs;
+
+        private readonly IEasyCachingProvider _m1;
+        private readonly IEasyCachingProvider _m2;
+        private readonly IEasyCachingProvider _m3;
+
+        public MemoryCachingProviderDeepCloneTest()
+        {
+            IServiceCollection services = new ServiceCollection();
+            services.AddEasyCaching(x => 
+            {
+                x.UseInMemory(options => 
+                {
+                    options.MaxRdSecond = 0;
+                    //options.DBConfig = new InMemoryCachingOptions
+                    //{
+                    //    EnableWriteDeepClone = false,
+                    //    EnableReadDeepClone = true,                       
+                    //};
+                }, "m1");
+
+                x.UseInMemory(options =>
+                {
+                    options.MaxRdSecond = 0;
+                    options.DBConfig = new InMemoryCachingOptions
+                    {
+                        EnableWriteDeepClone = true,
+                        EnableReadDeepClone = true,
+                    };
+                }, "m2");
+
+                x.UseInMemory(options =>
+                {
+                    options.MaxRdSecond = 0;
+                    options.DBConfig = new InMemoryCachingOptions
+                    {
+                        EnableWriteDeepClone = false,
+                        EnableReadDeepClone = false,
+                    };
+                }, "m3");
+            });
+            IServiceProvider serviceProvider = services.BuildServiceProvider();
+            var factory = serviceProvider.GetService<IEasyCachingProviderFactory>();
+
+            _m1 = factory.GetCachingProvider("m1");
+            _m2 = factory.GetCachingProvider("m2");
+            _m3 = factory.GetCachingProvider("m3");
+
+            _defaultTs = TimeSpan.FromSeconds(30);
+        }
+
+        [Fact]
+        public void Enable_Read_Write_DeepClone_Should_Succeed()
+        {
+            var cacheKey = Guid.NewGuid().ToString();
+
+            var cacheValue = new MySettingForCaching { Name = "catcherwong" };
+
+            _m2.Set(cacheKey, cacheValue, _defaultTs);
+
+            cacheValue.Name = "afterset";
+
+            var res = _m2.Get<MySettingForCaching>(cacheKey);
+
+            res.Value.Name = "kobe";
+
+            var res2 = _m2.Get<MySettingForCaching>(cacheKey);
+
+            Assert.Equal("catcherwong", res2.Value.Name);
+        }
+
+
+        [Fact]
+        public void Enable_Read_And_Disable_Write_DeepClone_Should_Succeed()
+        {
+            var cacheKey = Guid.NewGuid().ToString();
+
+            var cacheValue = new MySettingForCaching { Name = "catcherwong" };
+
+            _m1.Set(cacheKey, cacheValue, _defaultTs);
+
+            cacheValue.Name = "afterset";
+
+            var res = _m1.Get<MySettingForCaching>(cacheKey);
+
+            res.Value.Name = "kobe";
+
+            var res2 = _m1.Get<MySettingForCaching>(cacheKey);
+
+            Assert.Equal("afterset", res2.Value.Name);
+        }
+
+
+        [Fact]
+        public void Disable_Read_And_Disable_Write_DeepClone_Should_Succeed()
+        {
+            var cacheKey = Guid.NewGuid().ToString();
+
+            var cacheValue = new MySettingForCaching { Name = "catcherwong" };
+
+            _m3.Set(cacheKey, cacheValue, _defaultTs);
+
+            cacheValue.Name = "afterset";
+
+            var res = _m3.Get<MySettingForCaching>(cacheKey);
+
+            res.Value.Name = "kobe";
+
+            var res2 = _m3.Get<MySettingForCaching>(cacheKey);
+
+            Assert.Equal("kobe", res2.Value.Name);
+        }        
+    }
+
+    [Serializable]
+    public class MySettingForCaching
+    {
+        public string Name { get; set; }
     }
 }

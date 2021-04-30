@@ -1,12 +1,13 @@
-namespace EasyCaching.UnitTests
+﻿namespace EasyCaching.UnitTests
 {
     using System;
     using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
+    using AspectCore.Extensions.DependencyInjection;
     using EasyCaching.Core;
     using EasyCaching.Core.Interceptor;
-    using EasyCaching.InMemory;
+    using EasyCaching.LiteDB;
     using EasyCaching.Interceptor.AspectCore;
     using EasyCaching.UnitTests.Infrastructure;
     using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +16,8 @@ namespace EasyCaching.UnitTests
     public abstract class BaseAspectCoreInterceptorTest
     {
         protected IEasyCachingProvider _cachingProvider;
+
+        protected IEasyCachingProvider _secondCachingProvider;
 
         protected IAspectCoreExampleService _service;
 
@@ -71,9 +74,10 @@ namespace EasyCaching.UnitTests
             Assert.True(value.HasValue);
             Assert.Equal("PutTest-1", value.Value);
         }
+        
 
         [Fact]
-        protected virtual void Evict_Should_Succeed()
+        protected virtual void Evict_And_Switch_Provider_Should_Succeed()
         {
             System.Reflection.MethodInfo method = typeof(AspectCoreExampleService).GetMethod("EvictTest");
 
@@ -85,6 +89,11 @@ namespace EasyCaching.UnitTests
 
             Assert.Equal("AAA", value.Value);
 
+            _service.EvictSwitchProviderTest();
+
+            value = _cachingProvider.Get<string>(key);
+
+            Assert.Equal("AAA", value.Value);
 
             _service.EvictTest();
 
@@ -179,89 +188,101 @@ namespace EasyCaching.UnitTests
 
             Assert.Equal(list1.First().Prop, list2.First().Prop);
         }
+
+        [Fact]
+        protected virtual async Task Issues106_Interceptor_Able_Null_Value_Test()
+        {
+            var tick1 = await _service.AbleTestWithNullValueAsync();
+
+            var tick2 = await _service.AbleTestWithNullValueAsync();
+
+            Assert.Null(tick1);
+            Assert.Equal(tick1, tick2);
+        }
+
+        [Fact]
+        protected virtual void Interceptor_Should_Recognize_Subclass_Of_EasyCachingAble_Attribute()
+        {
+            var tick1 = _service.CustomAbleAttributeTest();
+
+            Thread.Sleep(1);
+
+            var tick2 = _service.CustomAbleAttributeTest();
+
+            Assert.Equal(tick1, tick2);
+
+            Thread.Sleep(1100);
+
+            var tick3 = _service.CustomAbleAttributeTest();
+
+            Assert.NotEqual(tick3, tick1);
+        }
+
+        [Fact]
+        protected virtual void Interceptor_Should_Recognize_Subclass_Of_EasyCachingPut_Attribute()
+        {
+            var str = _service.CustomPutAttributeTest(1);
+
+            var method = typeof(AspectCoreExampleService).GetMethod("CustomPutAttributeTest");
+
+            var key = _keyGenerator.GetCacheKey(method, new object[] { 1 }, "Custom");
+
+            var value = _cachingProvider.Get<string>(key);
+
+            Assert.True(value.HasValue);
+            Assert.Equal("CustomPutTest-1", value.Value);
+        }
+
+        [Fact]
+        protected virtual void Interceptor_Should_Recognize_Subclass_Of_EasyCachingEvict_Attribute()
+        {
+            var method = typeof(AspectCoreExampleService).GetMethod("CustomEvictAttributeTest");
+
+            var key = _keyGenerator.GetCacheKey(method, null, "Custom");
+
+            var cachedValue = Guid.NewGuid().ToString();
+
+            _cachingProvider.Set(key, cachedValue, TimeSpan.FromSeconds(30));
+
+            var value = _cachingProvider.Get<string>(key);
+
+            Assert.True(value.HasValue);
+            Assert.Equal(cachedValue, value.Value);
+
+            _service.CustomEvictAttributeTest();
+
+            var after = _cachingProvider.Get<string>(key);
+
+            Assert.False(after.HasValue);
+        }
     }
 
     public class AspectCoreInterceptorTest : BaseAspectCoreInterceptorTest
     {
         public AspectCoreInterceptorTest()
         {
+            const string firstCacheProviderName = "first";
+            const string secondCacheProviderName = "second";
             IServiceCollection services = new ServiceCollection();
             services.AddTransient<IAspectCoreExampleService, AspectCoreExampleService>();
-            services.AddDefaultInMemoryCache(x =>
+            services.AddEasyCaching(x =>
             {
-                x.MaxRdSecond = 0;
+                x.UseInMemory(options => options.MaxRdSecond = 0, firstCacheProviderName);
+                x.UseInMemory(options => options.MaxRdSecond = 0, secondCacheProviderName);
             });
-            IServiceProvider serviceProvider = services.ConfigureAspectCoreInterceptor();
+            services.AddLogging();
+            services.ConfigureAspectCoreInterceptor(options => options.CacheProviderName = firstCacheProviderName);
 
-            _cachingProvider = serviceProvider.GetService<IEasyCachingProvider>();
+            //var container = services.ToServiceContainer();
+            //container.ConfigureAspectCoreInterceptor();
+
+            IServiceProvider serviceProvider = services.BuildServiceContextProvider();          
+
+            var factory = serviceProvider.GetService<IEasyCachingProviderFactory>();
+            _cachingProvider = factory.GetCachingProvider(firstCacheProviderName);
+            _secondCachingProvider = factory.GetCachingProvider(secondCacheProviderName);
             _service = serviceProvider.GetService<IAspectCoreExampleService>();
             _keyGenerator = serviceProvider.GetService<IEasyCachingKeyGenerator>();
         }
-    }
-
-    //public class AspectCoreInterceptorWithActionTest : BaseAspectCoreInterceptorTest
-    //{
-    //    private ITestInterface _interface;
-
-    //    public AspectCoreInterceptorWithActionTest()
-    //    {
-    //        IServiceCollection services = new ServiceCollection();
-    //        services.AddTransient<IAspectCoreExampleService, AspectCoreExampleService>();
-    //        services.AddDefaultInMemoryCache();
-
-    //        Action<IServiceContainer> action = x =>
-    //        {
-    //            x.AddType<ITestInterface, TestInterface>();
-    //        };
-
-    //        IServiceProvider serviceProvider = services.ConfigureAspectCoreInterceptor(action);
-
-    //        _cachingProvider = serviceProvider.GetService<IEasyCachingProvider>();
-    //        _service = serviceProvider.GetService<IAspectCoreExampleService>();
-    //        _keyGenerator = serviceProvider.GetService<IEasyCachingKeyGenerator>();
-
-    //        _interface = serviceProvider.GetService<ITestInterface>();
-    //    }
-
-    //    [Fact]
-    //    public void Add_Other_Types_Should_Succeed()
-    //    {
-    //        Assert.IsType<TestInterface>(_interface);
-    //    }
-    //}
-
-    //public class AspectCoreInterceptorWithActionAndIsRemoveDefaultTest : BaseAspectCoreInterceptorTest
-    //{
-    //    private ITestInterface _interface;
-
-    //    public AspectCoreInterceptorWithActionAndIsRemoveDefaultTest()
-    //    {
-    //        IServiceCollection services = new ServiceCollection();
-    //        services.AddTransient<IAspectCoreExampleService, AspectCoreExampleService>();
-    //        services.AddDefaultInMemoryCache();
-
-    //        Action<IServiceContainer> action = x =>
-    //        {
-    //            x.AddType<ITestInterface, TestInterface>();
-    //            x.Configure(config =>
-    //            {
-    //                config.Interceptors.AddTyped<EasyCachingInterceptor>(method => typeof(Core.Internal.IEasyCaching).IsAssignableFrom(method.DeclaringType));
-    //            });
-    //        };
-
-    //        IServiceProvider serviceProvider = services.ConfigureAspectCoreInterceptor(action, true);
-
-    //        _cachingProvider = serviceProvider.GetService<IEasyCachingProvider>();
-    //        _service = serviceProvider.GetService<IAspectCoreExampleService>();
-    //        _keyGenerator = serviceProvider.GetService<IEasyCachingKeyGenerator>();
-
-    //        _interface = serviceProvider.GetService<ITestInterface>();
-    //    }
-
-    //    [Fact]
-    //    public void Add_Other_Types_Should_Succeed()
-    //    {
-    //        Assert.IsType<TestInterface>(_interface);
-    //    }
-    //}
+    }    
 }

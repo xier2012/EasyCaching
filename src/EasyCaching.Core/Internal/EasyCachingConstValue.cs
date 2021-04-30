@@ -36,6 +36,26 @@
         public const string InMemorySection = "easycaching:inmemory";
 
         /// <summary>
+        /// The disk section.
+        /// </summary>
+        public const string DiskSection = "easycaching:disk";
+
+        /// <summary>
+        /// The hybrid section.
+        /// </summary>
+        public const string HybridSection = "easycaching:hybrid";
+
+        /// <summary>
+        /// The redis bus section.
+        /// </summary>
+        public const string RedisBusSection = "easycaching:redisbus";
+
+        /// <summary>
+        /// The rabbitMQ Bus section.
+        /// </summary>
+        public const string RabbitMQBusSection = "easycaching:rabbitmqbus";
+
+        /// <summary>
         /// The default name of the in-memory.
         /// </summary>
         public const string DefaultInMemoryName = "DefaultInMemory";
@@ -59,5 +79,29 @@
         /// The default name of the SQLite.
         /// </summary>
         public const string DefaultSQLiteName = "DefaultSQLite";
+
+        /// <summary>
+        /// The default name of the disk.
+        /// </summary>
+        public const string DefaultDiskName = "DefaultDisk";
+
+        /// <summary>
+        /// The default name of the hybrid.
+        /// </summary>
+        public const string DefaultHybridName = "DefaultHybrid";
+
+        /// <summary>
+        /// The default name of the serializer.
+        /// </summary>
+        public const string DefaultSerializerName = "binary";
+
+        /// <summary>
+        /// The default name of the LiteDB.
+        /// </summary>
+        public const string DefaultLiteDBName = "DefaultLiteDB";
+        /// <summary>
+        /// The LiteDB Bus section.
+        /// </summary>
+        public const string LiteDBSection= "easycaching:litedb";
     }
 }

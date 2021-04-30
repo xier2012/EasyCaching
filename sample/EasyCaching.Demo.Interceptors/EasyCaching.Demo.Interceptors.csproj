@@ -1,7 +1,7 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,15 +9,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="AspectCore.Extensions.Hosting" Version="2.1.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\EasyCaching.Interceptor.Castle\EasyCaching.Interceptor.Castle.csproj" />
-    <ProjectReference Include="..\..\src\EasyCaching.Interceptor.AspectCore\EasyCaching.Interceptor.AspectCore.csproj" />
+    <ProjectReference Include="..\..\interceptor\EasyCaching.Interceptor.Castle\EasyCaching.Interceptor.Castle.csproj" />
+    <ProjectReference Include="..\..\interceptor\EasyCaching.Interceptor.AspectCore\EasyCaching.Interceptor.AspectCore.csproj" />
     <ProjectReference Include="..\..\src\EasyCaching.Core\EasyCaching.Core.csproj" />
     <ProjectReference Include="..\..\src\EasyCaching.InMemory\EasyCaching.InMemory.csproj" />
     <ProjectReference Include="..\..\src\EasyCaching.Redis\EasyCaching.Redis.csproj" />
-    <ProjectReference Include="..\..\src\EasyCaching.Serialization.MessagePack\EasyCaching.Serialization.MessagePack.csproj" />
+    <ProjectReference Include="..\..\serialization\EasyCaching.Serialization.Json\EasyCaching.Serialization.Json.csproj" />
+    <ProjectReference Include="..\..\serialization\EasyCaching.Serialization.MessagePack\EasyCaching.Serialization.MessagePack.csproj" />
+    <ProjectReference Include="..\..\serialization\EasyCaching.Serialization.Protobuf\EasyCaching.Serialization.Protobuf.csproj" />
   </ItemGroup>
 </Project>

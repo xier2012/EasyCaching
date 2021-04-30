@@ -1,24 +1,22 @@
-namespace EasyCaching.UnitTests
+﻿namespace EasyCaching.UnitTests
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Reflection;
-    using System.Threading;
-    using System.Threading.Tasks;
     using Autofac;
-    using Autofac.Extras.DynamicProxy;
+    using Autofac.Extensions.DependencyInjection;
     using EasyCaching.Core;
     using EasyCaching.Core.Interceptor;
-    using EasyCaching.InMemory;
     using EasyCaching.Interceptor.Castle;
     using EasyCaching.UnitTests.Infrastructure;
     using Microsoft.Extensions.DependencyInjection;
+    using System;
+    using System.Threading;
+    using System.Threading.Tasks;
     using Xunit;
 
     public abstract class BaseCastleInterceptorTest
     {
         protected IEasyCachingProvider _cachingProvider;
+
+        protected IEasyCachingProvider _secondCachingProvider;
 
         protected ICastleExampleService _service;
 
@@ -78,6 +76,24 @@ namespace EasyCaching.UnitTests
         }
 
         [Fact]
+        protected virtual void Put_Switch_Provider_Should_Succeed()
+        {
+            var str = _service.PutSwitchProviderTest(1);
+
+            System.Reflection.MethodInfo method = typeof(CastleExampleService).GetMethod("PutTest");
+
+            var key = _keyGenerator.GetCacheKey(method, new object[] { 1, "123" }, "CastleExample");
+
+            var value = _cachingProvider.Get<string>(key);
+
+            Assert.False(value.HasValue);
+
+            value = _secondCachingProvider.Get<string>(key);
+
+            Assert.True(value.HasValue);
+        }
+
+        [Fact]
         protected virtual void Evict_Should_Succeed()
         {
             System.Reflection.MethodInfo method = typeof(CastleExampleService).GetMethod("EvictTest");
@@ -101,7 +117,7 @@ namespace EasyCaching.UnitTests
         [Fact]
         protected virtual void EvictAll_Should_Succeed()
         {
-            System.Reflection.MethodInfo method = typeof(AspectCoreExampleService).GetMethod("EvictAllTest");
+            System.Reflection.MethodInfo method = typeof(CastleExampleService).GetMethod("EvictAllTest");
 
             var prefix = _keyGenerator.GetCacheKeyPrefix(method, "CastleExample");
 
@@ -144,16 +160,16 @@ namespace EasyCaching.UnitTests
 
             var key = _keyGenerator.GetCacheKey(method, new object[] { 1, "123" }, "CastleExample");
 
-            var value = _cachingProvider.Get<Task<string>>(key);
+            var value = _cachingProvider.Get<string>(key);
 
             Assert.True(value.HasValue);
-            Assert.Equal(str, value.Value.Result);
+            Assert.Equal(str, value.Value);
         }
 
         [Fact]
         protected virtual async Task Interceptor_Evict_With_Task_Method_Should_Succeed()
         {
-            System.Reflection.MethodInfo method = typeof(AspectCoreExampleService).GetMethod("EvictTest");
+            System.Reflection.MethodInfo method = typeof(CastleExampleService).GetMethod("EvictTest");
 
             var key = _keyGenerator.GetCacheKey(method, null, "CastleExample");
 
@@ -173,130 +189,101 @@ namespace EasyCaching.UnitTests
             Assert.False(after.HasValue);
         }
 
+        [Fact]
+        protected virtual async Task Issues106_Interceptor_Able_Null_Value_Test()
+        {
+            var tick1 = await _service.AbleTestWithNullValueAsync();
+
+            var tick2 = await _service.AbleTestWithNullValueAsync();
+
+            Assert.Null(tick1);
+            Assert.Equal(tick1, tick2);
+        }
+
+        [Fact]
+        protected virtual void Interceptor_Should_Recognize_Subclass_Of_EasyCachingAble_Attribute()
+        {
+            var tick1 = _service.CustomAbleAttributeTest();
+
+            Thread.Sleep(1);
+
+            var tick2 = _service.CustomAbleAttributeTest();
+
+            Assert.Equal(tick1, tick2);
+
+            Thread.Sleep(1100);
+
+            var tick3 = _service.CustomAbleAttributeTest();
+
+            Assert.NotEqual(tick3, tick1);
+        }
+
+        [Fact]
+        protected virtual void Interceptor_Should_Recognize_Subclass_Of_EasyCachingPut_Attribute()
+        {
+            var str = _service.CustomPutAttributeTest(1);
+
+            var method = typeof(AspectCoreExampleService).GetMethod("CustomPutAttributeTest");
+
+            var key = _keyGenerator.GetCacheKey(method, new object[] { 1 }, "Custom");
+
+            var value = _cachingProvider.Get<string>(key);
+
+            Assert.True(value.HasValue);
+            Assert.Equal("CustomPutTest-1", value.Value);
+        }
+
+        [Fact]
+        protected virtual void Interceptor_Should_Recognize_Subclass_Of_EasyCachingEvict_Attribute()
+        {
+            var method = typeof(AspectCoreExampleService).GetMethod("CustomEvictAttributeTest");
+
+            var key = _keyGenerator.GetCacheKey(method, null, "Custom");
+
+            var cachedValue = Guid.NewGuid().ToString();
+
+            _cachingProvider.Set(key, cachedValue, TimeSpan.FromSeconds(30));
+
+            var value = _cachingProvider.Get<string>(key);
+
+            Assert.True(value.HasValue);
+            Assert.Equal(cachedValue, value.Value);
+
+            _service.CustomEvictAttributeTest();
+
+            var after = _cachingProvider.Get<string>(key);
+
+            Assert.False(after.HasValue);
+        }
     }
 
     public class CastleInterceptorTest : BaseCastleInterceptorTest
     {
         public CastleInterceptorTest()
         {
+            const string firstCacheProviderName = "first";
+            const string secondCacheProviderName = "second";
             IServiceCollection services = new ServiceCollection();
             services.AddTransient<ICastleExampleService, CastleExampleService>();
-            services.AddDefaultInMemoryCache(x=> 
+            services.AddEasyCaching(x =>
             {
-                x.MaxRdSecond = 0;
+                x.UseInMemory(options => options.MaxRdSecond = 0, firstCacheProviderName);
+                x.UseInMemory(options => options.MaxRdSecond = 0, secondCacheProviderName);
             });
-            IServiceProvider serviceProvider = services.ConfigureCastleInterceptor();
+            services.AddLogging();
+            services.ConfigureCastleInterceptor(options => options.CacheProviderName = firstCacheProviderName);
 
-            _cachingProvider = serviceProvider.GetService<IEasyCachingProvider>();
+            var builder = new ContainerBuilder();
+            builder.Populate(services);
+            builder.ConfigureCastleInterceptorForTest();
+
+            IServiceProvider serviceProvider = new AutofacServiceProvider(builder.Build());
+
+            var factory = serviceProvider.GetService<IEasyCachingProviderFactory>();
+            _cachingProvider = factory.GetCachingProvider(firstCacheProviderName);
+            _secondCachingProvider = factory.GetCachingProvider(secondCacheProviderName);
             _service = serviceProvider.GetService<ICastleExampleService>();
             _keyGenerator = serviceProvider.GetService<IEasyCachingKeyGenerator>();
         }
     }
-
-    public class CastleInterceptorWithActionTest : BaseCastleInterceptorTest
-    {
-        private ITestInterface _interface;
-
-        public CastleInterceptorWithActionTest()
-        {
-            IServiceCollection services = new ServiceCollection();
-            services.AddTransient<IAspectCoreExampleService, AspectCoreExampleService>();
-            services.AddDefaultInMemoryCache(x =>
-            {
-                x.MaxRdSecond = 0;
-            });
-
-            Action<ContainerBuilder> action = x =>
-            {
-                x.RegisterType<TestInterface>().As<ITestInterface>();
-            };
-
-            IServiceProvider serviceProvider = services.ConfigureCastleInterceptor(action);
-
-            _cachingProvider = serviceProvider.GetService<IEasyCachingProvider>();
-            _service = serviceProvider.GetService<ICastleExampleService>();
-            _keyGenerator = serviceProvider.GetService<IEasyCachingKeyGenerator>();
-
-            _interface = serviceProvider.GetService<ITestInterface>();
-        }
-
-        [Fact]
-        public void Add_Other_Types_Should_Succeed()
-        {
-            Assert.IsType<TestInterface>(_interface);
-        }
-    }
-
-    public class CastleInterceptorWithActionAndIsRemoveDefaultTest : BaseCastleInterceptorTest
-    {
-        private ITestInterface _interface;
-
-        public CastleInterceptorWithActionAndIsRemoveDefaultTest()
-        {
-            IServiceCollection services = new ServiceCollection();
-            services.AddTransient<IAspectCoreExampleService, AspectCoreExampleService>();
-            services.AddDefaultInMemoryCache(x =>
-            {
-                x.MaxRdSecond = 0;
-            });
-
-            Action<ContainerBuilder> action = x =>
-            {
-                x.RegisterType<TestInterface>().As<ITestInterface>();
-
-                var assembly = Assembly.GetExecutingAssembly();
-                x.RegisterType<EasyCachingInterceptor>();
-
-                //neet to improve
-                var iTypes = assembly.GetTypes().Where(t => t.IsInterface && t.GetMethods().Any
-                            (y => y.CustomAttributes.Any(data =>
-                               typeof(EasyCachingAbleAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
-                             || typeof(EasyCachingPutAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
-                             || typeof(EasyCachingEvictAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
-                              ))).ToList();
-
-                var implTypes = new List<Type>();
-                foreach (var item in iTypes)
-                {
-                    implTypes.AddRange(assembly.GetTypes().Where(t => item.GetTypeInfo().IsAssignableFrom(t) && t.IsClass));
-                }
-
-                foreach (var item in implTypes)
-                {
-                    x.RegisterType(item)
-                        .As(item.GetInterfaces())
-                        .InstancePerLifetimeScope()
-                        .EnableInterfaceInterceptors()
-                        .InterceptedBy(typeof(EasyCachingInterceptor));
-                }
-
-                //x.RegisterAssemblyTypes(assembly)
-                //.Where(type => type.GetMethods().Any(y => y.CustomAttributes.Any
-                //      (data =>
-                //        typeof(EasyCachingAbleAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
-                //      || typeof(EasyCachingPutAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
-                //      || typeof(EasyCachingEvictAttribute).GetTypeInfo().IsAssignableFrom(data.AttributeType)
-                //      )))
-                //.AsImplementedInterfaces()
-                //.InstancePerLifetimeScope()
-                //.EnableInterfaceInterceptors()
-                //.InterceptedBy(typeof(EasyCachingInterceptor));
-            };
-
-            IServiceProvider serviceProvider = services.ConfigureCastleInterceptor(action, true);
-
-            _cachingProvider = serviceProvider.GetService<IEasyCachingProvider>();
-            _service = serviceProvider.GetService<ICastleExampleService>();
-            _keyGenerator = serviceProvider.GetService<IEasyCachingKeyGenerator>();
-
-            _interface = serviceProvider.GetService<ITestInterface>();
-        }
-
-        [Fact]
-        public void Add_Other_Types_Should_Succeed()
-        {
-            Assert.IsType<TestInterface>(_interface);
-        }
-    }
-
 }

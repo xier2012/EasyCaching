@@ -7,7 +7,10 @@
     using EasyCaching.Core;
     using EasyCaching.Core.Bus;
     using Microsoft.Extensions.Logging;
-    using Microsoft.Extensions.Options;
+    using Polly;
+    using Polly.Fallback;
+    using Polly.Retry;
+    using Polly.Wrap;
 
     /// <summary>
     /// Hybrid caching provider.
@@ -38,45 +41,79 @@
         /// The cache identifier.
         /// </summary>
         private readonly string _cacheId;
+        /// <summary>
+        /// The name.
+        /// </summary>
+        private readonly string _name;
+
+        private readonly AsyncPolicyWrap _busAsyncWrap;
+        private readonly PolicyWrap _busSyncWrap;
+        private readonly RetryPolicy retryPolicy;
+        private readonly AsyncRetryPolicy retryAsyncPolicy;
+        private readonly FallbackPolicy fallbackPolicy;
+        private readonly AsyncFallbackPolicy fallbackAsyncPolicy;
+
+        public string Name => _name;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="T:EasyCaching.HybridCache.HybridCachingProvider"/> class.
         /// </summary>
+        /// <param name="name">Name.</param>
         /// <param name="optionsAccs">Options accs.</param>
-        /// <param name="providers">Providers.</param>
+        /// <param name="factory">Providers factory</param>
         /// <param name="bus">Bus.</param>
         /// <param name="loggerFactory">Logger factory.</param>
         public HybridCachingProvider(
-            IOptions<HybridCachingOptions> optionsAccs
-            , IEnumerable<IEasyCachingProvider> providers
+            string name
+            , HybridCachingOptions optionsAccs
+            , IEasyCachingProviderFactory factory
             , IEasyCachingBus bus = null
             , ILoggerFactory loggerFactory = null
             )
         {
-            ArgumentCheck.NotNullAndCountGTZero(providers, nameof(providers));
+            ArgumentCheck.NotNull(factory, nameof(factory));
 
-            this._options = optionsAccs.Value;
+            this._name = name;
+            this._options = optionsAccs;
 
             ArgumentCheck.NotNullOrWhiteSpace(_options.TopicName, nameof(_options.TopicName));
 
             this._logger = loggerFactory?.CreateLogger<HybridCachingProvider>();
 
-            //Here use the order to distinguish traditional provider
-            var local = providers.OrderBy(x => x.Order).FirstOrDefault(x => !x.IsDistributedCache);
-
-            if (local == null) throw new NotFoundCachingProviderException("Can not found any local caching providers.");
+            // Here use the order to distinguish traditional provider
+            var local = factory.GetCachingProvider(_options.LocalCacheProviderName);
+            if (local.IsDistributedCache) throw new NotFoundCachingProviderException("Can not found any local caching providers.");
             else this._localCache = local;
 
-            //Here use the order to distinguish traditional provider
-            var distributed = providers.OrderBy(x => x.Order).FirstOrDefault(x => x.IsDistributedCache);
+            // Here use the order to distinguish traditional provider
+            var distributed = factory.GetCachingProvider(_options.DistributedCacheProviderName);
 
-            if (distributed == null) throw new NotFoundCachingProviderException("Can not found any distributed caching providers.");
+            if (!distributed.IsDistributedCache) throw new NotFoundCachingProviderException("Can not found any distributed caching providers.");
             else this._distributedCache = distributed;
 
             this._bus = bus ?? NullEasyCachingBus.Instance;
             this._bus.Subscribe(_options.TopicName, OnMessage);
 
             this._cacheId = Guid.NewGuid().ToString("N");
+
+
+            // policy
+
+            retryAsyncPolicy = Policy.Handle<Exception>()
+                    .WaitAndRetryAsync(this._options.BusRetryCount, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1)));
+
+            retryPolicy = Policy.Handle<Exception>()
+                   .WaitAndRetry(this._options.BusRetryCount, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1)));
+
+            fallbackPolicy = Policy.Handle<Exception>().Fallback(() => { });
+
+            fallbackAsyncPolicy = Policy.Handle<Exception>().FallbackAsync(ct =>
+            {
+                return Task.CompletedTask;
+            });
+
+            _busSyncWrap = Policy.Wrap(fallbackPolicy, retryPolicy);
+            _busAsyncWrap = Policy.WrapAsync(fallbackAsyncPolicy, retryAsyncPolicy);
         }
 
         /// <summary>
@@ -89,14 +126,23 @@
             if (!string.IsNullOrWhiteSpace(message.Id) && message.Id.Equals(_cacheId, StringComparison.OrdinalIgnoreCase))
                 return;
 
+            // remove by prefix
+            if (message.IsPrefix)
+            {
+                var prefix = message.CacheKeys.First();
+
+                _localCache.RemoveByPrefix(prefix);
+
+                LogMessage($"remove local cache that prefix is {prefix}");
+
+                return;
+            }
+
             foreach (var item in message.CacheKeys)
             {
                 _localCache.Remove(item);
 
-                if (_options.EnableLogging)
-                {
-                    _logger.LogTrace($"remove local cache that cache key is {item}");
-                }
+                LogMessage($"remove local cache that cache key is {item}");
             }
         }
 
@@ -108,8 +154,22 @@
         public bool Exists(string cacheKey)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+            bool flag;
 
-            return _distributedCache.Exists(cacheKey);
+            // Circuit Breaker may be more better
+            try
+            {
+                flag = _distributedCache.Exists(cacheKey);
+                return flag;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Check cache key exists error [{cacheKey}] ", ex);
+            }
+
+            flag = _localCache.Exists(cacheKey);
+
+            return flag;
         }
 
         /// <summary>
@@ -121,7 +181,21 @@
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            return await _distributedCache.ExistsAsync(cacheKey);
+            bool flag;
+
+            // Circuit Breaker may be more better
+            try
+            {
+                flag = await _distributedCache.ExistsAsync(cacheKey);
+                return flag;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Check cache key [{cacheKey}] exists error", ex);
+            }
+
+            flag = await _localCache.ExistsAsync(cacheKey);
+            return flag;
         }
 
         /// <summary>
@@ -141,25 +215,28 @@
                 return cacheValue;
             }
 
-            if (_options.EnableLogging)
-            {
-                _logger.LogTrace($"local cache can not get the value of {cacheKey}");
-            }
+            LogMessage($"local cache can not get the value of {cacheKey}");
 
-            cacheValue = _distributedCache.Get<T>(cacheKey);
+            // Circuit Breaker may be more better
+            try
+            {
+                cacheValue = _distributedCache.Get<T>(cacheKey);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"distributed cache get error, [{cacheKey}]", ex);
+            }
 
             if (cacheValue.HasValue)
             {
-                //TODO: What about the value of expiration? Form configuration or others?
-                _localCache.Set(cacheKey, cacheValue.Value, TimeSpan.FromSeconds(60));
+                TimeSpan ts = GetExpiration(cacheKey);
+               
+                _localCache.Set(cacheKey, cacheValue.Value, ts);
 
                 return cacheValue;
             }
 
-            if (_options.EnableLogging)
-            {
-                _logger.LogTrace($"distributed cache can not get the value of {cacheKey}");
-            }
+            LogMessage($"distributed cache can not get the value of {cacheKey}");
 
             return CacheValue<T>.NoValue;
         }
@@ -181,25 +258,27 @@
                 return cacheValue;
             }
 
-            if (_options.EnableLogging)
-            {
-                _logger.LogTrace($"local cache can not get the value of {cacheKey}");
-            }
+            LogMessage($"local cache can not get the value of {cacheKey}");
 
-            cacheValue = await _distributedCache.GetAsync<T>(cacheKey);
+            try
+            {
+                cacheValue = await _distributedCache.GetAsync<T>(cacheKey);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"distributed cache get error, [{cacheKey}]", ex);
+            }
 
             if (cacheValue.HasValue)
             {
-                //TODO: What about the value of expiration? Form configuration or others?
-                await _localCache.SetAsync(cacheKey, cacheValue.Value, TimeSpan.FromSeconds(60));
+                TimeSpan ts = await GetExpirationAsync(cacheKey);
+
+                await _localCache.SetAsync(cacheKey, cacheValue.Value, ts);
 
                 return cacheValue;
             }
 
-            if (_options.EnableLogging)
-            {
-                _logger.LogTrace($"distributed cache can not get the value of {cacheKey}");
-            }
+            LogMessage($"distributed cache can not get the value of {cacheKey}");
 
             return CacheValue<T>.NoValue;
         }
@@ -212,12 +291,20 @@
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            //distributed cache at first
-            _distributedCache.Remove(cacheKey);
+            try
+            {
+                // distributed cache at first
+                _distributedCache.Remove(cacheKey);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"remove cache key [{cacheKey}] error", ex);
+            }
+
             _localCache.Remove(cacheKey);
 
-            //send message to bus 
-            _bus.Publish(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } });
+            // send message to bus 
+            _busSyncWrap.Execute(() => _bus.Publish(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } }));
         }
 
         /// <summary>
@@ -229,12 +316,20 @@
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            //distributed cache at first
-            await _distributedCache.RemoveAsync(cacheKey);
+            try
+            {
+                // distributed cache at first
+                await _distributedCache.RemoveAsync(cacheKey);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"remove cache key [{cacheKey}] error", ex);
+            }
+
             await _localCache.RemoveAsync(cacheKey);
 
-            //send message to bus 
-            await _bus.PublishAsync(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } });
+            // send message to bus 
+            await _busAsyncWrap.ExecuteAsync(async () => await _bus.PublishAsync(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } }));
         }
 
         /// <summary>
@@ -249,10 +344,18 @@
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
             _localCache.Set(cacheKey, cacheValue, expiration);
-            _distributedCache.Set(cacheKey, cacheValue, expiration);
 
-            //When create/update cache, send message to bus so that other clients can remove it.
-            _bus.Publish(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } });
+            try
+            {
+                _distributedCache.Set(cacheKey, cacheValue, expiration);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"set cache key [{cacheKey}] error", ex);
+            }
+
+            // When create/update cache, send message to bus so that other clients can remove it.
+            _busSyncWrap.Execute(() => _bus.Publish(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } }));
         }
 
         /// <summary>
@@ -268,10 +371,18 @@
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
             await _localCache.SetAsync(cacheKey, cacheValue, expiration);
-            await _distributedCache.SetAsync(cacheKey, cacheValue, expiration);
 
-            //When create/update cache, send message to bus so that other clients can remove it.
-            await _bus.PublishAsync(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } });
+            try
+            {
+                await _distributedCache.SetAsync(cacheKey, cacheValue, expiration);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"set cache key [{cacheKey}] error", ex);
+            }
+
+            // When create/update cache, send message to bus so that other clients can remove it.
+            await _busAsyncWrap.ExecuteAsync(async () => await _bus.PublishAsync(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } }));
         }
 
         /// <summary>
@@ -286,12 +397,36 @@
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            var flag = _distributedCache.TrySet(cacheKey, cacheValue, expiration);
+            bool distributedError = false;
+            bool flag = false;
+
+            try
+            {
+                flag = _distributedCache.TrySet(cacheKey, cacheValue, expiration);
+            }
+            catch (Exception ex)
+            {
+                distributedError = true;
+                LogMessage($"tryset cache key [{cacheKey}] error", ex);
+            }
+
+            if (flag && !distributedError)
+            {
+                // When we TrySet succeed in distributed cache, we should Set this cache to local cache.
+                // It's mainly to prevent the cache value was changed
+                _localCache.Set(cacheKey, cacheValue, expiration);
+            }
+
+            // distributed cache occur error, have a try with local cache
+            if (distributedError)
+            {
+                flag = _localCache.TrySet(cacheKey, cacheValue, expiration);
+            }
 
             if (flag)
             {
-                //When TrySet succeed in distributed cache, Set(not TrySet) this cache to local cache.
-                _localCache.Set(cacheKey, cacheValue, expiration);
+                // Here should send message to bus due to cache was set successfully.
+                _busSyncWrap.Execute(() => _bus.Publish(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } }));
             }
 
             return flag;
@@ -309,12 +444,36 @@
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            var flag = await _distributedCache.TrySetAsync(cacheKey, cacheValue, expiration);
+            bool distributedError = false;
+            bool flag = false;
+
+            try
+            {
+                flag = await _distributedCache.TrySetAsync(cacheKey, cacheValue, expiration);
+            }
+            catch (Exception ex)
+            {
+                distributedError = true;
+                LogMessage($"tryset cache key [{cacheKey}] error", ex);
+            }
+
+            if (flag && !distributedError)
+            {
+                // When we TrySet succeed in distributed cache, we should Set this cache to local cache.
+                // It's mainly to prevent the cache value was changed
+                await _localCache.SetAsync(cacheKey, cacheValue, expiration);
+            }
+
+            // distributed cache occur error, have a try with local cache
+            if (distributedError)
+            {
+                flag = await _localCache.TrySetAsync(cacheKey, cacheValue, expiration);
+            }
 
             if (flag)
             {
-                //When we TrySet succeed in distributed cache, we should Set this cache to local cache.
-                await _localCache.SetAsync(cacheKey, cacheValue, expiration);
+                // Here should send message to bus due to cache was set successfully.
+                await _busAsyncWrap.ExecuteAsync(async () => await _bus.PublishAsync(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { cacheKey } }));
             }
 
             return flag;
@@ -328,7 +487,19 @@
         /// <typeparam name="T">The 1st type parameter.</typeparam>
         public void SetAll<T>(IDictionary<string, T> value, TimeSpan expiration)
         {
-            _distributedCache.SetAll(value, expiration);
+            _localCache.SetAll(value, expiration);
+
+            try
+            {
+                _distributedCache.SetAll(value, expiration);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"set all from distributed provider error [{string.Join(",", value.Keys)}]", ex);
+            }
+
+            // send message to bus 
+            _busSyncWrap.Execute(() => _bus.Publish(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = value.Keys.ToArray(), IsPrefix = false }));
         }
 
         /// <summary>
@@ -340,7 +511,19 @@
         /// <typeparam name="T">The 1st type parameter.</typeparam>
         public async Task SetAllAsync<T>(IDictionary<string, T> value, TimeSpan expiration)
         {
-            await _distributedCache.SetAllAsync(value, expiration);
+            await _localCache.SetAllAsync(value, expiration);
+
+            try
+            {
+                await _distributedCache.SetAllAsync(value, expiration);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"set all from distributed provider error [{string.Join(",", value.Keys)}]", ex);
+            }
+
+            // send message to bus 
+            await _busAsyncWrap.ExecuteAsync(async () => await _bus.PublishAsync(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = value.Keys.ToArray(), IsPrefix = false }));
         }
 
         /// <summary>
@@ -351,12 +534,19 @@
         {
             ArgumentCheck.NotNullAndCountGTZero(cacheKeys, nameof(cacheKeys));
 
+            try
+            {
+                _distributedCache.RemoveAllAsync(cacheKeys);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"remove all from distributed provider error [{string.Join(",", cacheKeys)}]", ex);
+            }
+
             _localCache.RemoveAll(cacheKeys);
 
-            _distributedCache.RemoveAllAsync(cacheKeys);
-
-            //send message to bus in order to notify other clients.
-            _bus.Publish(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = cacheKeys.ToArray() });
+            // send message to bus in order to notify other clients.
+            _busSyncWrap.Execute(() => _bus.Publish(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = cacheKeys.ToArray() }));
         }
 
         /// <summary>
@@ -368,12 +558,19 @@
         {
             ArgumentCheck.NotNullAndCountGTZero(cacheKeys, nameof(cacheKeys));
 
+            try
+            {
+                await _distributedCache.RemoveAllAsync(cacheKeys);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"remove all async from distributed provider error [{string.Join(",", cacheKeys)}]", ex);
+            }
+
             await _localCache.RemoveAllAsync(cacheKeys);
 
-            await _distributedCache.RemoveAllAsync(cacheKeys);
-
-            //send message to bus in order to notify other clients.
-            await _bus.PublishAsync(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = cacheKeys.ToArray() });
+            // send message to bus in order to notify other clients.
+            await _busAsyncWrap.ExecuteAsync(async () => await _bus.PublishAsync(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = cacheKeys.ToArray() }));
         }
 
         /// <summary>
@@ -391,16 +588,30 @@
 
             var result = _localCache.Get<T>(cacheKey);
 
-            if(result.HasValue)
+            if (result.HasValue)
             {
                 return result;
             }
 
-            result = _distributedCache.Get<T>(cacheKey, dataRetriever , expiration);
+            try
+            {
+                result = _distributedCache.Get<T>(cacheKey, dataRetriever, expiration);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"get with data retriever from distributed provider error [{cacheKey}]", ex);
+            }
 
-            return result.HasValue
-               ? result
-               : CacheValue<T>.NoValue;
+            if (result.HasValue)
+            {
+                TimeSpan ts = GetExpiration(cacheKey);
+
+                _localCache.Set(cacheKey, result.Value, ts);
+
+                return result;
+            }
+
+            return CacheValue<T>.NoValue;
         }
 
         /// <summary>
@@ -423,11 +634,170 @@
                 return result;
             }
 
-            result = await _distributedCache.GetAsync<T>(cacheKey, dataRetriever , expiration);
+            try
+            {
+                result = await _distributedCache.GetAsync<T>(cacheKey, dataRetriever, expiration);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"get async with data retriever from distributed provider error [{cacheKey}]", ex);
+            }
 
-            return result.HasValue
-                ? result
-                : CacheValue<T>.NoValue;
+            if (result.HasValue)
+            {
+                TimeSpan ts = await GetExpirationAsync(cacheKey);
+
+                _localCache.Set(cacheKey, result.Value, ts);
+
+                return result;
+            }
+
+            return CacheValue<T>.NoValue;
+        }
+
+        /// <summary>
+        /// Removes the by prefix.
+        /// </summary>
+        /// <param name="prefix">Prefix.</param>
+        public void RemoveByPrefix(string prefix)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(prefix, nameof(prefix));
+
+            try
+            {
+                _distributedCache.RemoveByPrefix(prefix);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"remove by prefix [{prefix}] error", ex);
+            }
+
+            _localCache.RemoveByPrefix(prefix);
+
+            // send message to bus 
+            _busSyncWrap.Execute(() => _bus.Publish(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { prefix }, IsPrefix = true }));
+        }
+
+        /// <summary>
+        /// Removes the by prefix async.
+        /// </summary>
+        /// <returns>The by prefix async.</returns>
+        /// <param name="prefix">Prefix.</param>
+        public async Task RemoveByPrefixAsync(string prefix)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(prefix, nameof(prefix));
+
+            try
+            {
+                await _distributedCache.RemoveByPrefixAsync(prefix);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"remove by prefix [{prefix}] error", ex);
+            }
+
+            await _localCache.RemoveByPrefixAsync(prefix);
+
+            // send message to bus in order to notify other clients.
+            await _busAsyncWrap.ExecuteAsync(async () => await _bus.PublishAsync(_options.TopicName, new EasyCachingMessage { Id = _cacheId, CacheKeys = new string[] { prefix }, IsPrefix = true }));
+        }
+
+        /// <summary>
+        /// Logs the message.
+        /// </summary>
+        /// <param name="message">Message.</param>
+        /// <param name="ex">Ex.</param>
+        private void LogMessage(string message, Exception ex = null)
+        {
+            if (_options.EnableLogging)
+            {
+                if (ex == null)
+                {
+                    _logger.LogDebug(message);
+                }
+                else
+                {
+                    _logger.LogError(ex, message);
+                }
+            }
+        }
+
+        private async Task<TimeSpan> GetExpirationAsync(string cacheKey)
+        {
+            TimeSpan ts = TimeSpan.Zero;
+
+            try
+            {
+                ts = await _distributedCache.GetExpirationAsync(cacheKey);
+            }
+            catch
+            {
+
+            }
+
+            if (ts <= TimeSpan.Zero)
+            {
+                ts = TimeSpan.FromSeconds(_options.DefaultExpirationForTtlFailed);
+            }
+
+            return ts;
+        }
+
+        private TimeSpan GetExpiration(string cacheKey)
+        {
+            TimeSpan ts = TimeSpan.Zero;
+
+            try
+            {
+                ts = _distributedCache.GetExpiration(cacheKey);
+            }
+            catch
+            {
+
+            }
+
+            if (ts <= TimeSpan.Zero)
+            {
+                ts = TimeSpan.FromSeconds(_options.DefaultExpirationForTtlFailed);
+            }
+
+            return ts;
+        }
+
+        public async Task<object> GetAsync(string cacheKey, Type type)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+
+            var cacheValue = await _localCache.GetAsync(cacheKey, type);
+
+            if (cacheValue != null)
+            {
+                return cacheValue;
+            }
+
+            LogMessage($"local cache can not get the value of {cacheKey}");
+
+            try
+            {
+                cacheValue = await _distributedCache.GetAsync(cacheKey, type);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"distributed cache get error, [{cacheKey}]", ex);
+            }
+
+            if (cacheValue != null)
+            {
+                TimeSpan ts = await GetExpirationAsync(cacheKey);
+              
+                await _localCache.SetAsync(cacheKey, cacheValue, ts);
+
+                return cacheValue;
+            }
+
+            LogMessage($"distributed cache can not get the value of {cacheKey}");
+
+            return null;
         }
     }
 }

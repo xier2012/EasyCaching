@@ -10,8 +10,176 @@
     /// <remarks>
     /// Contains some features of redis
     /// </remarks>
-    public interface IRedisCachingProvider : IEasyCachingProvider
+    public interface IRedisCachingProvider
     {
+        string RedisName { get; }
+
+        #region Keys
+        /// <summary>
+        /// https://redis.io/commands/del
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <returns></returns>
+        bool KeyDel(string cacheKey);
+        /// <summary>
+        /// https://redis.io/commands/del
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <returns></returns>
+        Task<bool> KeyDelAsync(string cacheKey);
+        /// <summary>
+        /// https://redis.io/commands/expire
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="second"></param>
+        /// <returns></returns>
+        bool KeyExpire(string cacheKey, int second);
+        /// <summary>
+        /// https://redis.io/commands/expire
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="second"></param>
+        /// <returns></returns>
+        Task<bool> KeyExpireAsync(string cacheKey, int second);
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        /// <param name="cacheKey"></param>
+        Task<bool> KeyExistsAsync(string cacheKey);
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        /// <param name="cacheKey"></param>
+        bool KeyExists(string cacheKey);
+        /// <summary>
+        /// https://redis.io/commands/ttl
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <returns></returns>
+        long TTL(string cacheKey);
+        /// <summary>
+        /// https://redis.io/commands/ttl
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <returns></returns>
+        Task<long> TTLAsync(string cacheKey);
+
+        /// <summary>
+        /// Searchs the keys.
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        List<string> SearchKeys(string cacheKey, int? count = null);
+        #endregion
+
+        #region String
+        /// <summary>
+        /// https://redis.io/commands/incrby
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        long IncrBy(string cacheKey, long value = 1);
+        /// <summary>
+        /// https://redis.io/commands/incrby
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        Task<long> IncrByAsync(string cacheKey, long value = 1);
+        /// <summary>
+        /// https://redis.io/commands/incrbyfloat
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        double IncrByFloat(string cacheKey, double value = 1);
+        /// <summary>
+        /// https://redis.io/commands/incrbyfloat
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        Task<double> IncrByFloatAsync(string cacheKey, double value = 1);
+        /// <summary>
+        /// https://redis.io/commands/set
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="cacheValue"></param>
+        /// <param name="expiration"></param>
+        /// <param name="when">nx,xx,</param>
+        /// <returns></returns>
+        bool StringSet(string cacheKey, string cacheValue, System.TimeSpan? expiration = null, string when = "");
+        /// <summary>
+        /// https://redis.io/commands/set
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="cacheValue"></param>
+        /// <param name="expiration"></param>
+        /// <param name="when">nx,xx,</param>
+        /// <returns></returns>
+        Task<bool> StringSetAsync(string cacheKey, string cacheValue, System.TimeSpan? expiration = null, string when = "");
+        /// <summary>
+        /// https://redis.io/commands/get
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <returns></returns>
+        string StringGet(string cacheKey);
+        /// <summary>
+        /// https://redis.io/commands/get
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <returns></returns>
+        Task<string> StringGetAsync(string cacheKey);
+        /// <summary>
+        /// https://redis.io/commands/strlen
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <returns></returns>
+        long StringLen(string cacheKey);
+        /// <summary>
+        /// https://redis.io/commands/strlen
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <returns></returns>
+        Task<long> StringLenAsync(string cacheKey);
+        /// <summary>
+        /// https://redis.io/commands/setrange
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="offest"></param>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        long StringSetRange(string cacheKey, long offest, string value);
+        /// <summary>
+        /// https://redis.io/commands/setrange
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="offest"></param>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        Task<long> StringSetRangeAsync(string cacheKey, long offest, string value);
+        /// <summary>
+        /// https://redis.io/commands/getrange
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="start"></param>
+        /// <param name="end"></param>
+        /// <returns></returns>
+        string StringGetRange(string cacheKey, long start, long end);
+        /// <summary>
+        /// https://redis.io/commands/getrange
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="start"></param>
+        /// <param name="end"></param>
+        /// <returns></returns>
+        Task<string> StringGetRangeAsync(string cacheKey, long start, long end);
+        #endregion
+
         #region Hashes
         /// <summary>
         /// https://redis.io/commands/hmset
@@ -529,6 +697,14 @@
         /// <returns></returns>
         long ZCount(string cacheKey, double min, double max);
         /// <summary>
+        /// https://redis.io/commands/zincrby
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="field"></param>
+        /// <param name="val"></param>
+        /// <returns></returns>
+        double ZIncrBy(string cacheKey, string field, double val = 1);
+        /// <summary>
         /// https://redis.io/commands/zlexcount
         /// </summary>
         /// <param name="cacheKey"></param>
@@ -592,6 +768,14 @@
         /// <returns></returns>
         Task<long> ZCountAsync(string cacheKey, double min, double max);
         /// <summary>
+        /// https://redis.io/commands/zincrby
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="field"></param>
+        /// <param name="val"></param>
+        /// <returns></returns>
+        Task<double> ZIncrByAsync(string cacheKey, string field, double val = 1);
+        /// <summary>
         /// https://redis.io/commands/zlexcount
         /// </summary>
         /// <param name="cacheKey"></param>
@@ -633,5 +817,117 @@
         /// <returns></returns>
         Task<double?> ZScoreAsync<T>(string cacheKey, T cacheValue);
         #endregion
+
+        #region Hyperloglog
+        /// <summary>
+        /// https://redis.io/commands/pfadd
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="cacheKey"></param>
+        /// <param name="values"></param>
+        /// <returns></returns>
+        bool PfAdd<T>(string cacheKey, List<T> values);
+        /// <summary>
+        /// https://redis.io/commands/pfadd
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="cacheKey"></param>
+        /// <param name="values"></param>
+        /// <returns></returns>
+        Task<bool> PfAddAsync<T>(string cacheKey, List<T> values);
+        /// <summary>
+        /// https://redis.io/commands/pfcount
+        /// </summary>
+        /// <param name="cacheKeys"></param>
+        /// <returns></returns>
+        long PfCount(List<string> cacheKeys);
+        /// <summary>
+        /// https://redis.io/commands/pfcount
+        /// </summary>
+        /// <param name="cacheKeys"></param>
+        /// <returns></returns>
+        Task<long> PfCountAsync(List<string> cacheKeys);
+        /// <summary>
+        /// https://redis.io/commands/pfmerge
+        /// </summary>
+        /// <param name="destKey"></param>
+        /// <param name="sourceKeys"></param>
+        /// <returns></returns>
+        bool PfMerge(string destKey, List<string> sourceKeys);
+        /// <summary>
+        /// https://redis.io/commands/pfmerge
+        /// </summary>
+        /// <param name="destKey"></param>
+        /// <param name="sourceKeys"></param>
+        /// <returns></returns>
+        Task<bool> PfMergeAsync(string destKey, List<string> sourceKeys);
+        #endregion
+
+        #region Geo
+        /// <summary>
+        /// https://redis.io/commands/geoadd
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="values"></param>
+        /// <returns></returns>
+        long GeoAdd(string cacheKey, List<(double longitude, double latitude, string member)> values);
+        /// <summary>
+        /// https://redis.io/commands/geoadd
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="values"></param>
+        /// <returns></returns>
+        Task<long> GeoAddAsync(string cacheKey, List<(double longitude, double latitude, string member)> values);
+        /// <summary>
+        /// https://redis.io/commands/geodist
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="member1"></param>
+        /// <param name="member2"></param>
+        /// <param name="unit"></param>
+        /// <returns></returns>
+        double? GeoDist(string cacheKey, string member1, string member2, string unit = "m");
+        /// <summary>
+        /// https://redis.io/commands/geodist
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="member1"></param>
+        /// <param name="member2"></param>
+        /// <param name="unit"></param>
+        /// <returns></returns>
+        Task<double?> GeoDistAsync(string cacheKey, string member1, string member2, string unit = "m");
+        /// <summary>
+        /// https://redis.io/commands/geohash
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        List<string> GeoHash(string cacheKey, List<string> members);
+        /// <summary>
+        /// https://redis.io/commands/geohash
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        Task<List<string>> GeoHashAsync(string cacheKey, List<string> members);
+        /// <summary>
+        /// https://redis.io/commands/geopos
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        List<(decimal longitude, decimal latitude)?> GeoPos(string cacheKey, List<string> members);
+        /// <summary>
+        /// https://redis.io/commands/geopos
+        /// </summary>
+        /// <param name="cacheKey"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        Task<List<(decimal longitude, decimal latitude)?>> GeoPosAsync(string cacheKey, List<string> members);
+        #endregion
+
+        object Eval(string script, string cacheKey, List<object> args);
+
+        Task<object> EvalAsync(string script, string cacheKey, List<object> args);
     }
 }

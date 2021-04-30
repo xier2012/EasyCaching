@@ -1,8 +1,6 @@
 ﻿namespace EasyCaching.InMemory
 {
-    using EasyCaching.Core.Internal;
     using EasyCaching.Core;
-    using Microsoft.Extensions.Options;
     using System;
     using System.Collections.Concurrent;
     using System.Collections.Generic;
@@ -15,21 +13,30 @@
         private readonly ConcurrentDictionary<string, CacheEntry> _memory;
         private DateTimeOffset _lastExpirationScan;
         private readonly InMemoryCachingOptions _options;
+        private readonly string _name;
+        private long _cacheSize = 0L;
+        private const string _UPTOLIMIT_KEY = "inter_up_to_limit_key";
 
-        public InMemoryCaching(IOptions<InMemoryCachingOptions> optionsAccessor)
+        public InMemoryCaching(string name, InMemoryCachingOptions optionsAccessor)
         {
             ArgumentCheck.NotNull(optionsAccessor, nameof(optionsAccessor));
 
-            _options = optionsAccessor.Value;
+            _name = name;
+            _options = optionsAccessor;
             _memory = new ConcurrentDictionary<string, CacheEntry>();
             _lastExpirationScan = SystemClock.UtcNow;
         }
 
+        public string ProviderName => this._name;
+
         public void Clear(string prefix = "")
         {
             if (string.IsNullOrWhiteSpace(prefix))
-            {
+            {                
                 _memory.Clear();
+
+                if (_options.SizeLimit.HasValue)
+                    Interlocked.Exchange(ref _cacheSize, 0);
             }
             else
             {
@@ -46,7 +53,9 @@
 
         internal void RemoveExpiredKey(string key)
         {
-            _memory.TryRemove(key, out _);
+           bool flag = _memory.TryRemove(key, out _);
+            if (_options.SizeLimit.HasValue && flag)
+                Interlocked.Decrement(ref _cacheSize);
         }
 
         public CacheValue<T> Get<T>(string key)
@@ -60,18 +69,44 @@
 
             if (cacheEntry.ExpiresAt < SystemClock.UtcNow)
             {
-                _memory.TryRemove(key, out _);
+                RemoveExpiredKey(key);
                 return CacheValue<T>.NoValue;
             }
 
             try
             {
-                var value = cacheEntry.GetValue<T>();
+                var value = cacheEntry.GetValue<T>(_options.EnableReadDeepClone);
                 return new CacheValue<T>(value, true);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"some error herer, message = {ex.Message}");
+                return CacheValue<T>.NoValue;
+            }
+        }
+
+        public object Get(string key)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(key, nameof(key));
+
+            if (!_memory.TryGetValue(key, out var cacheEntry))
+            {
+                return null;
+            }
+
+            if (cacheEntry.ExpiresAt < SystemClock.UtcNow)
+            {
+                RemoveExpiredKey(key);
+                return null;
+            }
+
+            try
+            {
+                return cacheEntry.Value;
             }
             catch
             {
-                return CacheValue<T>.NoValue;
+                return null;
             }
         }
 
@@ -79,7 +114,7 @@
         {
             ArgumentCheck.NotNullOrWhiteSpace(key, nameof(key));
 
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
             return SetInternal(new CacheEntry(key, value, expiresAt), true);
         }
 
@@ -87,7 +122,7 @@
         {
             ArgumentCheck.NotNullOrWhiteSpace(key, nameof(key));
 
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
             return SetInternal(new CacheEntry(key, value, expiresAt));
         }
 
@@ -99,32 +134,71 @@
                 return false;
             }
 
-            if (_memory.Count >= _options.SizeLimit)
+            if (_options.SizeLimit.HasValue && Interlocked.Read(ref _cacheSize) >= _options.SizeLimit)
             {
-                // order by last access ticks 
-                // up to size limit, should remove 
-                var oldestList = _memory.ToArray()
-                                   .OrderBy(kvp => kvp.Value.LastAccessTicks)
-                                   .ThenBy(kvp => kvp.Value.InstanceNumber)
-                                   .Take(5)
-                                   .Select(kvp => kvp.Key);
+                // prevent alaways access the following logic after up to limit
+                if (_memory.TryAdd(_UPTOLIMIT_KEY, new CacheEntry(_UPTOLIMIT_KEY, 1, DateTimeOffset.UtcNow.AddSeconds(5))))
+                {
+                    var shouldRemoveCount = 5;
 
-                RemoveAll(oldestList);
+                    if (_options.SizeLimit.Value >= 10000)
+                    {
+                        shouldRemoveCount = (int)(_options.SizeLimit * 0.005d);
+                    }
+                    else if (_options.SizeLimit.Value >= 1000 && _options.SizeLimit.Value < 10000)
+                    {
+                        shouldRemoveCount = (int)(_options.SizeLimit * 0.01d);
+                    }
+
+                    var oldestList = _memory.ToArray()
+                                    .OrderBy(kvp => kvp.Value.LastAccessTicks)
+                                    .ThenBy(kvp => kvp.Value.InstanceNumber)
+                                    .Take(shouldRemoveCount)
+                                    .Select(kvp => kvp.Key);
+
+                    RemoveAll(oldestList);
+
+                    //// this key will be remove by ScanForExpiredItems.
+                    //_memory.TryRemove(_UPTOLIMIT_KEY, out _);
+                }
             }
 
-            if (addOnly)
+            CacheEntry deep = null;
+            if (_options.EnableWriteDeepClone)
             {
-                if (!_memory.TryAdd(entry.Key, entry))
+                try
                 {
-                    if (!_memory.TryGetValue(entry.Key, out var existingEntry) || existingEntry.ExpiresAt >= SystemClock.UtcNow)
-                        return false;
-
-                    _memory.AddOrUpdate(entry.Key, entry, (k, cacheEntry) => entry);
+                    deep = DeepClonerGenerator.CloneObject(entry);
+                }
+                catch (Exception)
+                {
+                    deep = entry;
                 }
             }
             else
             {
-                _memory.AddOrUpdate(entry.Key, entry, (k, cacheEntry) => entry);
+                deep = entry;
+            }
+
+            if (addOnly)
+            {
+                if (!_memory.TryAdd(deep.Key, deep))
+                {
+                    if (!_memory.TryGetValue(deep.Key, out var existingEntry) || existingEntry.ExpiresAt >= SystemClock.UtcNow)
+                        return false;
+
+                    _memory.AddOrUpdate(deep.Key, deep, (k, cacheEntry) => deep);
+
+                    if(_options.SizeLimit.HasValue)
+                        Interlocked.Increment(ref _cacheSize);
+                }
+            }
+            else
+            {
+                _memory.AddOrUpdate(deep.Key, deep, (k, cacheEntry) => deep);
+
+                if (_options.SizeLimit.HasValue)
+                    Interlocked.Increment(ref _cacheSize);
             }
 
             StartScanForExpiredItems();
@@ -143,19 +217,33 @@
         {
             if (keys == null)
             {
-                int count = _memory.Count;
-                _memory.Clear();
-                return count;
+                if (_options.SizeLimit.HasValue)
+                {
+                    int count = (int)Interlocked.Read(ref _cacheSize);
+                    Interlocked.Exchange(ref _cacheSize, 0);
+                    _memory.Clear();
+                    return count;
+                }
+                else
+                {
+                    int count = _memory.Count;
+                    _memory.Clear();
+                    return count;
+                }
             }
 
             int removed = 0;
             foreach (string key in keys)
             {
-                if (String.IsNullOrEmpty(key))
+                if (string.IsNullOrEmpty(key))
                     continue;
 
                 if (_memory.TryRemove(key, out _))
+                { 
                     removed++;
+                    if (_options.SizeLimit.HasValue)
+                        Interlocked.Decrement(ref _cacheSize);
+                }
             }
 
             return removed;
@@ -163,7 +251,14 @@
 
         public bool Remove(string key)
         {
-            return _memory.TryRemove(key, out _);
+            bool flag = _memory.TryRemove(key, out _);
+
+            if (_options.SizeLimit.HasValue && !key.Equals(_UPTOLIMIT_KEY) && flag)
+            { 
+                Interlocked.Decrement(ref _cacheSize);
+            }
+
+            return flag;
         }
 
         public int RemoveByPrefix(string prefix)
@@ -204,7 +299,7 @@
         private void StartScanForExpiredItems()
         {
             var utcNow = SystemClock.UtcNow;
-            if (_options.ExpirationScanFrequency < utcNow - _lastExpirationScan)
+            if (TimeSpan.FromSeconds(_options.ExpirationScanFrequency) < utcNow - _lastExpirationScan)
             {
                 _lastExpirationScan = utcNow;
                 Task.Factory.StartNew(state => ScanForExpiredItems((InMemoryCaching)state), this,
@@ -224,7 +319,18 @@
         public IDictionary<string, CacheValue<T>> GetByPrefix<T>(string key)
         {
             var values = _memory.Values.Where(x => x.Key.StartsWith(key, StringComparison.OrdinalIgnoreCase) && x.ExpiresAt > SystemClock.UtcNow);
-            return values.ToDictionary(k => k.Key, v => new CacheValue<T>(v.GetValue<T>(), true));
+            return values.ToDictionary(k => k.Key, v => new CacheValue<T>(v.GetValue<T>(_options.EnableReadDeepClone), true));
+        }
+
+        public TimeSpan GetExpiration(string key)
+        {
+            if (!_memory.TryGetValue(key, out var value))
+                return TimeSpan.Zero;
+
+            if (value.ExpiresAt >= SystemClock.UtcNow)
+                return value.ExpiresAt.Subtract(SystemClock.UtcNow);
+
+            return TimeSpan.Zero;
         }
 
         private class CacheEntry
@@ -270,9 +376,10 @@
             /// </summary>
             /// <typeparam name="T"></typeparam>
             /// <returns></returns>
-            public T GetValue<T>()
+            public T GetValue<T>(bool isDeepClone = true)
             {
                 object val = Value;
+              
                 var t = typeof(T);
 
                 if (t == TypeHelper.BoolType || t == TypeHelper.StringType || t == TypeHelper.CharType || t == TypeHelper.DateTimeType || t.IsNumeric())
@@ -281,7 +388,9 @@
                 if (t == TypeHelper.NullableBoolType || t == TypeHelper.NullableCharType || t == TypeHelper.NullableDateTimeType || t.IsNullableNumeric())
                     return val == null ? default(T) : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t));
 
-                return (T)val;
+                return isDeepClone 
+                    ? DeepClonerGenerator.CloneObject<T>((T)val)
+                    : (T)val;
             }
         }
     }

@@ -1,50 +1,62 @@
 <Project>
-	<PropertyGroup>
-		<EasyCachingCorePackageNotes>
-        1. EasyCaching Bus
-        2. HybridCaching
-        </EasyCachingCorePackageNotes>
-		<EasyCachingMemcachedPackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingMemcachedPackageNotes>
-		<EasyCachingRedisPackageNotes>        
-        1. Adjust reference namespace.
-        </EasyCachingRedisPackageNotes>
-		<EasyCachingSQLitePackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingSQLitePackageNotes>
-		<EasyCachingInMemoryPackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingInMemoryPackageNotes>
-		<EasyCachingHybridPackageNotes>
-        1. Refactor.
-        </EasyCachingHybridPackageNotes>
-		<EasyCachingAspectCorePackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingAspectCorePackageNotes>
-		<EasyCachingCastlePackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingCastlePackageNotes>
-		<EasyCachingResponseCachingPackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingResponseCachingPackageNotes>
-		<EasyCachingJsonPackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingJsonPackageNotes>
-		<EasyCachingMessagePackPackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingMessagePackPackageNotes>
-		<EasyCachingProtobufPackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingProtobufPackageNotes>
-        <EasyCachingCSRedisPackageNotes>
-        1. Adjust reference namespace.
-        </EasyCachingCSRedisPackageNotes>
-        <EasyCachingRedisBusPackageNotes>
-        1. Init.
-        </EasyCachingRedisBusPackageNotes>
-        <EasyCachingRabbitBusPackageNotes>
-        1. Init.
-        </EasyCachingRabbitBusPackageNotes>
-	</PropertyGroup>
+  <PropertyGroup>
+    <EasyCachingCorePackageNotes>
+      1. Allow to cache null value.
+      2. Ready for 1.x version.
+    </EasyCachingCorePackageNotes>
+    <EasyCachingMemcachedPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingMemcachedPackageNotes>
+    <EasyCachingRedisPackageNotes>
+      1. Support SyncTimeout and AsyncTimeout (#282).
+    </EasyCachingRedisPackageNotes>
+    <EasyCachingSQLitePackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingSQLitePackageNotes>
+    <EasyCachingInMemoryPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingInMemoryPackageNotes>
+    <EasyCachingHybridPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingHybridPackageNotes>
+    <EasyCachingAspectCorePackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingAspectCorePackageNotes>
+    <EasyCachingCastlePackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingCastlePackageNotes>
+    <EasyCachingResponseCachingPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingResponseCachingPackageNotes>
+    <EasyCachingJsonPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingJsonPackageNotes>
+    <EasyCachingMessagePackPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingMessagePackPackageNotes>
+    <EasyCachingProtobufPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingProtobufPackageNotes>
+    <EasyCachingCSRedisPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingCSRedisPackageNotes>
+    <EasyCachingCSRedisBusPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingCSRedisBusPackageNotes>
+    <EasyCachingRedisBusPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingRedisBusPackageNotes>
+    <EasyCachingRabbitBusPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingRabbitBusPackageNotes>
+    <EasyCachingDiskPackageNotes>
+      1. fixed disk provider tryset after expired (#280).
+    </EasyCachingDiskPackageNotes>
+    <EasyCachingLiteDBPackageNotes>
+      1. Upgrading dependencies.
+    </EasyCachingLiteDBPackageNotes>
+    <EasyCachingSTJsonPackageNotes>
+      1. Init.
+    </EasyCachingSTJsonPackageNotes>
+  </PropertyGroup>
 </Project>

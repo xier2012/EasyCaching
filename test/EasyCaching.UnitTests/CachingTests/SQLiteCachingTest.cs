@@ -2,56 +2,62 @@
 {
     using Dapper;
     using EasyCaching.Core;
+    using EasyCaching.Core.Configurations;
     using EasyCaching.SQLite;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
     using System;
     using System.IO;
+    using System.Linq;
     using System.Threading.Tasks;
     using Xunit;
 
     public class SQLiteCachingTest : BaseCachingProviderTest
     {
-        private readonly ISQLiteDatabaseProvider _dbProvider;
-
         public SQLiteCachingTest()
         {
+            _defaultTs = TimeSpan.FromSeconds(30);
+        }
+
+        protected override IEasyCachingProvider CreateCachingProvider(Action<BaseProviderOptions> additionalSetup)
+        {
             IServiceCollection services = new ServiceCollection();
-            services.AddSQLiteCache(options =>
-            {
-                options.DBConfig = new SQLiteDBOptions
+            services.AddEasyCaching(x =>
+                x.UseSQLite(options =>
                 {
-                    FileName = "s1.db",
-                    CacheMode = Microsoft.Data.Sqlite.SqliteCacheMode.Default,
-                    OpenMode = Microsoft.Data.Sqlite.SqliteOpenMode.Memory,
-                };
-            });
+                    options.DBConfig = new SQLiteDBOptions
+                    {
+                        FileName = "s1.db",
+                        CacheMode = Microsoft.Data.Sqlite.SqliteCacheMode.Default,
+                        OpenMode = Microsoft.Data.Sqlite.SqliteOpenMode.Memory,
+                    };
+                    additionalSetup(options);
+                })
+            );
 
             IServiceProvider serviceProvider = services.BuildServiceProvider();
-            _dbProvider = serviceProvider.GetService<ISQLiteDatabaseProvider>();
+            var dbProvider = serviceProvider.GetServices<ISQLiteDatabaseProvider>().First();
 
-            var conn = _dbProvider.GetConnection();
+            var conn = dbProvider.GetConnection();
             if (conn.State == System.Data.ConnectionState.Closed)
             {
                 conn.Open();
             }
+
             conn.Execute(ConstSQL.CREATESQL);
 
-            _provider = new DefaultSQLiteCachingProvider(_dbProvider, new TestOptionMonitorWrapper<SQLiteOptions>(new SQLiteOptions()));
-            _defaultTs = TimeSpan.FromSeconds(30);
+            return serviceProvider.GetService<IEasyCachingProvider>();
         }
 
         [Fact]
-        protected override Task  GetAsync_Parallel_Should_Succeed()
+        protected override Task GetAsync_Parallel_Should_Succeed()
         {
             return Task.FromResult(1);
-                
         }
 
         [Fact]
         protected override void Get_Parallel_Should_Succeed()
         {
-
         }
     }
 
@@ -61,24 +67,25 @@
         public SQLiteCachingProviderWithFactoryTest()
         {
             IServiceCollection services = new ServiceCollection();
-            services.AddSQLiteCacheWithFactory(EasyCachingConstValue.DefaultSQLiteName, options =>
+            services.AddEasyCaching(x =>
             {
-                options.DBConfig = new SQLiteDBOptions
+                x.UseSQLite(options =>
                 {
-                    FileName = "f0.db",
-                    CacheMode = Microsoft.Data.Sqlite.SqliteCacheMode.Default,
-                    OpenMode = Microsoft.Data.Sqlite.SqliteOpenMode.Memory,
-                };
-
-            });
-            services.AddSQLiteCacheWithFactory(SECOND_PROVIDER_NAME, options =>
-            {
-                options.DBConfig = new SQLiteDBOptions
+                    options.DBConfig = new SQLiteDBOptions
+                    {
+                        FileName = "f0.db",
+                        CacheMode = Microsoft.Data.Sqlite.SqliteCacheMode.Default,
+                        OpenMode = Microsoft.Data.Sqlite.SqliteOpenMode.Memory,
+                    };
+                }).UseSQLite(options =>
                 {
-                    FileName = "f1.db",
-                    CacheMode = Microsoft.Data.Sqlite.SqliteCacheMode.Default,
-                    OpenMode = Microsoft.Data.Sqlite.SqliteOpenMode.Memory,
-                };
+                    options.DBConfig = new SQLiteDBOptions
+                    {
+                        FileName = "f1.db",
+                        CacheMode = Microsoft.Data.Sqlite.SqliteCacheMode.Default,
+                        OpenMode = Microsoft.Data.Sqlite.SqliteOpenMode.Memory,
+                    };
+                }, SECOND_PROVIDER_NAME);
             });
             IServiceProvider serviceProvider = services.BuildServiceProvider();
             var factory = serviceProvider.GetService<IEasyCachingProviderFactory>();
@@ -93,6 +100,7 @@
                 {
                     conn.Open();
                 }
+
                 conn.Execute(ConstSQL.CREATESQL);
             }
 
@@ -140,6 +148,7 @@
                 {
                     conn.Open();
                 }
+
                 conn.Execute(ConstSQL.CREATESQL);
             }
 
@@ -179,18 +188,7 @@
         {
             IServiceCollection services = new ServiceCollection();
 
-            var appsettings = @"
-{
-    'easycaching': {
-        'sqlite': {
-            'MaxRdSecond': 600,
-            'Order': 99,
-            'dbconfig': {            
-                'FileName': 'my.db'
-            }
-        }
-    }
-}";
+            var appsettings = " { \"easycaching\": { \"sqlite\": { \"MaxRdSecond\": 600, \"dbconfig\": { \"FileName\": \"my.db\" } } } }";
             var path = TestHelpers.CreateTempFile(appsettings);
             var directory = Path.GetDirectoryName(path);
             var fileName = Path.GetFileName(path);
@@ -200,10 +198,7 @@
             configurationBuilder.AddJsonFile(fileName);
             var config = configurationBuilder.Build();
 
-            services.AddEasyCaching(option =>
-            {
-                option.UseSQLite(config, "mName");
-            });
+            services.AddEasyCaching(option => { option.UseSQLite(config, "mName"); });
 
             IServiceProvider serviceProvider = services.BuildServiceProvider();
             _provider = serviceProvider.GetService<IEasyCachingProvider>();
@@ -216,6 +211,7 @@
                 {
                     conn.Open();
                 }
+
                 conn.Execute(ConstSQL.CREATESQL);
             }
 
@@ -226,7 +222,7 @@
         public void Provider_Information_Should_Be_Correct()
         {
             Assert.Equal(600, _provider.MaxRdSecond);
-            Assert.Equal(99, _provider.Order);
+            //Assert.Equal(99, _provider.Order);
             Assert.Equal("mName", _provider.Name);
         }
     }

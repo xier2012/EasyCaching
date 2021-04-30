@@ -1,16 +1,372 @@
 ﻿namespace EasyCaching.UnitTests
 {
     using EasyCaching.Core;
-    using EasyCaching.CSRedis;
     using System;
     using System.Collections.Generic;
+    using System.Linq;
     using System.Threading.Tasks;
     using Xunit;
 
     public abstract class BaseRedisFeatureCachingProviderTest
     {
         protected IRedisCachingProvider _provider;
-        protected string _nameSpace = string.Empty;      
+        protected IEasyCachingProvider _baseProvider;
+        protected string _nameSpace = string.Empty;
+
+        #region Keys             
+        [Fact]
+        protected virtual void KeyDel_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+
+            var res = _provider.StringSet(cacheKey, "123");
+
+            Assert.True(res);
+
+            var flag = _provider.KeyDel(cacheKey);
+
+            Assert.True(flag);
+        }
+
+        [Fact]
+        protected virtual async Task KeyDelAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+
+            var res = _provider.StringSet(cacheKey, "123");
+
+            Assert.True(res);
+
+            var flag = await _provider.KeyDelAsync(cacheKey);
+
+            Assert.True(flag);
+        }
+
+        [Fact]
+        protected virtual void StringSet_And_KeyExpire_And_TTL_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+
+            var res = _provider.StringSet(cacheKey, "123");
+
+            Assert.True(res);
+
+            var flag = _provider.KeyExpire(cacheKey, 10);
+
+            Assert.True(flag);
+
+            var ttl = _provider.TTL(cacheKey);
+
+            Assert.InRange(ttl, 1, 10);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task StringSet_And_KeyExpire_And_TTL_Async_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+
+            var res = await _provider.StringSetAsync(cacheKey, "123");
+
+            Assert.True(res);
+
+            var flag = await _provider.KeyExpireAsync(cacheKey, 10);
+
+            Assert.True(flag);
+
+            var ttl = await _provider.TTLAsync(cacheKey);
+
+            Assert.InRange(ttl, 1, 10);
+
+            await _provider.KeyDelAsync(cacheKey);
+        }
+        #endregion
+
+        #region String
+
+        [Fact]
+        protected virtual void StringSet_With_Nx_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = Guid.NewGuid().ToString();
+
+            var res = _provider.StringSet(cacheKey, cacheValue, when: "nx");
+            Assert.True(res);
+
+            var res2 = _provider.StringSet(cacheKey, cacheValue, when: "nx");
+            Assert.False(res2);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task StringSetAsync_With_Nx_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = Guid.NewGuid().ToString();
+
+            var res = await _provider.StringSetAsync(cacheKey, cacheValue, when: "nx");
+            Assert.True(res);
+
+            var res2 = await _provider.StringSetAsync(cacheKey, cacheValue, when: "nx");
+            Assert.False(res2);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void StringSet_With_Xx_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = Guid.NewGuid().ToString();
+
+            var res = _provider.StringSet(cacheKey, cacheValue, when: "xx");
+            Assert.False(res);
+
+            var res2 = _provider.StringSet(cacheKey, cacheValue);
+            Assert.True(res2);
+            var res3 = _provider.StringSet(cacheKey, cacheValue, when: "xx");
+            Assert.True(res3);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task StringSetAsync_With_Xx_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = Guid.NewGuid().ToString();
+
+            var res = await _provider.StringSetAsync(cacheKey, cacheValue, when: "xx");
+            Assert.False(res);
+
+            var res2 = await _provider.StringSetAsync(cacheKey, cacheValue);
+            Assert.True(res2);
+            var res3 = await _provider.StringSetAsync(cacheKey, cacheValue, when: "xx");
+            Assert.True(res3);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void StringSet_And_StringGet_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = Guid.NewGuid().ToString();
+
+            var res = _provider.StringSet(cacheKey, cacheValue);
+
+            Assert.True(res);
+
+            var val = _provider.StringGet(cacheKey);
+
+            Assert.Equal(cacheValue, val);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task StringSet_And_StringGet_Async_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = Guid.NewGuid().ToString();
+
+            var res = await _provider.StringSetAsync(cacheKey, cacheValue);
+
+            Assert.True(res);
+
+            var val = await _provider.StringGetAsync(cacheKey);
+
+            Assert.Equal(cacheValue, val);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void IncrBy_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+
+            var res = _provider.IncrBy(cacheKey);
+
+            Assert.Equal(1, res);
+
+            var val = _provider.IncrBy(cacheKey, 3);
+
+            Assert.Equal(4, val);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task IncrByAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+
+            var res = await _provider.IncrByAsync(cacheKey);
+
+            Assert.Equal(1, res);
+
+            var val = await _provider.IncrByAsync(cacheKey, 3);
+
+            Assert.Equal(4, val);
+
+            await _provider.KeyDelAsync(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void IncrByFloat_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+
+            var res = _provider.IncrByFloat(cacheKey);
+
+            Assert.Equal(1d, res);
+
+            var val = _provider.IncrByFloat(cacheKey, 3d);
+
+            Assert.Equal(4d, val);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task IncrByFloatAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+
+            var res = await _provider.IncrByFloatAsync(cacheKey);
+
+            Assert.Equal(1d, res);
+
+            var val = await _provider.IncrByFloatAsync(cacheKey, 3d);
+
+            Assert.Equal(4d, val);
+
+            await _provider.KeyDelAsync(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void StringLen_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = "catcherwong";
+
+            var flag = _provider.StringSet(cacheKey, cacheValue);
+
+            Assert.True(flag);
+
+            var len = _provider.StringLen(cacheKey);
+
+            Assert.Equal(11, len);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task StringLenAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = "catcherwong";
+
+            var flag = await _provider.StringSetAsync(cacheKey, cacheValue);
+
+            Assert.True(flag);
+
+            var len = await _provider.StringLenAsync(cacheKey);
+
+            Assert.Equal(11, len);
+
+            await _provider.KeyDelAsync(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void StringSetRange_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = "Hello World";
+
+            var flag = _provider.StringSet(cacheKey, cacheValue);
+
+            Assert.True(flag);
+
+            var len = _provider.StringSetRange(cacheKey, 6, "Redis");
+
+            Assert.Equal(11, len);
+
+            var val = _provider.StringGet(cacheKey);
+
+            Assert.Equal("Hello Redis", val);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task StringSetRangeAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = "Hello World";
+
+            var flag = await _provider.StringSetAsync(cacheKey, cacheValue);
+
+            Assert.True(flag);
+
+            var len = await _provider.StringSetRangeAsync(cacheKey, 6, "Redis");
+
+            Assert.Equal(11, len);
+
+            var val = await _provider.StringGetAsync(cacheKey);
+
+            Assert.Equal("Hello Redis", val);
+
+            await _provider.KeyDelAsync(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void StringGetRange_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = "This is a string";
+
+            var flag = _provider.StringSet(cacheKey, cacheValue);
+
+            Assert.True(flag);
+
+            var res1 = _provider.StringGetRange(cacheKey, 0, 3);
+
+            Assert.Equal("This", res1);
+
+            var res2 = _provider.StringGetRange(cacheKey, -3, -1);
+
+            Assert.Equal("ing", res2);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task StringGetRangeAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-{Guid.NewGuid().ToString()}";
+            var cacheValue = "This is a string";
+
+            var flag = await _provider.StringSetAsync(cacheKey, cacheValue);
+
+            Assert.True(flag);
+
+            var res1 = await _provider.StringGetRangeAsync(cacheKey, 0, 3);
+
+            Assert.Equal("This", res1);
+
+            var res2 = await _provider.StringGetRangeAsync(cacheKey, -3, -1);
+
+            Assert.Equal("ing", res2);
+
+            await _provider.KeyDelAsync(cacheKey);
+        }
+
+
+        #endregion
 
         #region Hash
         [Fact]
@@ -545,8 +901,8 @@
 
             System.Threading.Thread.Sleep(1050);
 
-            var flag = _provider.Exists(cacheKey);
-            Assert.False(flag);
+            var val = _provider.HGet(cacheKey, "a1");
+            Assert.Null(val);
 
             _provider.HDel(cacheKey);
         }
@@ -565,8 +921,8 @@
 
             await Task.Delay(1050);
 
-            var flag = await _provider.ExistsAsync(cacheKey);
-            Assert.False(flag);
+            var val = await _provider.HGetAsync(cacheKey, "a1");
+            Assert.Null(val);
 
             await _provider.HDelAsync(cacheKey);
         }
@@ -584,7 +940,7 @@
             var val = _provider.LPop<string>(cacheKey);
             Assert.Equal("p2", val);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -598,7 +954,7 @@
             var val = await _provider.LPopAsync<string>(cacheKey);
             Assert.Equal("p2", val);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -615,7 +971,7 @@
             var pop = _provider.LPop<string>(cacheKey);
             Assert.Equal("p4", pop);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
 
@@ -633,7 +989,7 @@
             var pop = await _provider.LPopAsync<string>(cacheKey);
             Assert.Equal("p4", pop);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -672,7 +1028,7 @@
             Assert.Single(list);
             Assert.Equal("p3", list[0]);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -691,7 +1047,7 @@
             Assert.Single(list);
             Assert.Equal("p3", list[0]);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -709,7 +1065,7 @@
             Assert.Equal("p2", val0);
             Assert.Equal("p1", val1);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -727,7 +1083,7 @@
             Assert.Equal("p2", val0);
             Assert.Equal("p1", val1);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -748,7 +1104,7 @@
             var len2 = _provider.LLen(cacheKey);
             Assert.Equal(1, len2);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
 
@@ -770,7 +1126,7 @@
             var len2 = await _provider.LLenAsync(cacheKey);
             Assert.Equal(1, len2);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -788,7 +1144,7 @@
             Assert.Single(vals);
             Assert.Equal("p1", vals[0]);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -806,7 +1162,7 @@
             Assert.Single(vals);
             Assert.Equal("p1", vals[0]);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -820,7 +1176,7 @@
             var len = _provider.LLen(cacheKey);
             Assert.Equal(2, len);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -834,7 +1190,7 @@
             var len = await _provider.LLenAsync(cacheKey);
             Assert.Equal(2, len);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -848,7 +1204,7 @@
             var val = _provider.RPop<string>(cacheKey);
             Assert.Equal("p2", val);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
 
@@ -863,7 +1219,7 @@
             var val = await _provider.RPopAsync<string>(cacheKey);
             Assert.Equal("p2", val);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -880,7 +1236,7 @@
             var pop = _provider.RPop<string>(cacheKey);
             Assert.Equal("p4", pop);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -897,7 +1253,7 @@
             var pop = await _provider.RPopAsync<string>(cacheKey);
             Assert.Equal("p4", pop);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -914,7 +1270,7 @@
             var list = _provider.LRange<string>(cacheKey, 0, -1);
             Assert.Equal("p4", list[1]);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -931,7 +1287,7 @@
             var list = await _provider.LRangeAsync<string>(cacheKey, 0, -1);
             Assert.Equal("p4", list[1]);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -948,7 +1304,7 @@
             var list = _provider.LRange<string>(cacheKey, 0, -1);
             Assert.Equal("p4", list[2]);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -965,7 +1321,7 @@
             var list = await _provider.LRangeAsync<string>(cacheKey, 0, -1);
             Assert.Equal("p4", list[2]);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
         #endregion
 
@@ -983,7 +1339,7 @@
 
             Assert.Equal(2, len);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -997,11 +1353,11 @@
 
             System.Threading.Thread.Sleep(1050);
 
-            var flag = _provider.Exists(cacheKey);
+            var flag = _baseProvider.Exists(cacheKey);
 
             Assert.False(flag);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -1019,7 +1375,7 @@
             Assert.True(i1);
             Assert.True(i2);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -1035,7 +1391,7 @@
 
             Assert.False(i1);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -1051,7 +1407,7 @@
             Assert.Contains("s1", vals);
             Assert.Contains("s2", vals);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -1068,7 +1424,7 @@
             var flag = _provider.SIsMember<string>(cacheKey, "s1");
             Assert.False(flag);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -1082,10 +1438,10 @@
 
             Assert.Equal(1, len);
 
-            var flag = _provider.Exists(cacheKey);
+            var flag = _baseProvider.Exists(cacheKey);
             Assert.False(flag);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -1097,7 +1453,7 @@
 
             Assert.Empty(len);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -1111,7 +1467,7 @@
 
             Assert.Equal(2, vals.Count);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -1127,7 +1483,7 @@
 
             Assert.Equal(2, len);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -1145,7 +1501,7 @@
 
             Assert.Equal(0, len);
 
-            _provider.Remove(cacheKey);
+            _baseProvider.Remove(cacheKey);
         }
 
         [Fact]
@@ -1163,7 +1519,7 @@
             Assert.True(i1);
             Assert.True(i2);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -1179,7 +1535,7 @@
 
             Assert.False(i1);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -1195,7 +1551,7 @@
             Assert.Contains("s1", vals);
             Assert.Contains("s2", vals);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
 
@@ -1213,7 +1569,7 @@
             var flag = await _provider.SIsMemberAsync<string>(cacheKey, "s1");
             Assert.False(flag);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -1227,10 +1583,10 @@
 
             Assert.Equal(1, len);
 
-            var flag = await _provider.ExistsAsync(cacheKey);
+            var flag = await _baseProvider.ExistsAsync(cacheKey);
             Assert.False(flag);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -1242,7 +1598,7 @@
 
             Assert.Empty(len);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
         }
 
         [Fact]
@@ -1256,7 +1612,201 @@
 
             Assert.Equal(2, vals.Count);
 
-            await _provider.RemoveAsync(cacheKey);
+            await _baseProvider.RemoveAsync(cacheKey);
+        }
+        #endregion
+
+        #region Hyperloglog             
+        [Fact]
+        protected virtual void PfAdd_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-pfadd-{Guid.NewGuid().ToString()}";
+
+            var res1 = _provider.PfAdd<string>(cacheKey, new List<string> { "foo", "bar", "zap" });
+            var res2 = _provider.PfAdd<string>(cacheKey, new List<string> { "zap", "zap", "zap" });
+            Assert.True(res1);
+            Assert.False(res2);
+
+            var count = _provider.PfCount(new List<string> { cacheKey });
+
+            Assert.Equal(3, count);
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task PfAddAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-pfaddasync-{Guid.NewGuid().ToString()}";
+
+            var res1 = await _provider.PfAddAsync<string>(cacheKey, new List<string> { "foo", "bar", "zap" });
+            var res2 = await _provider.PfAddAsync<string>(cacheKey, new List<string> { "zap", "zap", "zap" });
+            Assert.True(res1);
+            Assert.False(res2);
+
+            var count = await _provider.PfCountAsync(new List<string> { cacheKey });
+
+            Assert.Equal(3, count);
+
+            await _provider.KeyDelAsync(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void PfMerge_Should_Succeed()
+        {
+            var cacheKey0 = $"{_nameSpace}-pfmerge-{Guid.NewGuid().ToString()}";
+            var cacheKey1 = $"{_nameSpace}-pfmerge-{Guid.NewGuid().ToString()}";
+            var cacheKey2 = $"{_nameSpace}-pfmerge-{Guid.NewGuid().ToString()}";
+
+            var res1 = _provider.PfAdd<string>(cacheKey1, new List<string> { "foo", "bar", "zap", "a" });
+            var res2 = _provider.PfAdd<string>(cacheKey2, new List<string> { "a", "b", "c", "foo" });
+            Assert.True(res1);
+            Assert.True(res2);
+
+
+            var flag = _provider.PfMerge(cacheKey0, new List<string> { cacheKey1, cacheKey2 });
+            Assert.True(flag);
+
+            var count = _provider.PfCount(new List<string> { cacheKey0 });
+
+            Assert.Equal(6, count);
+
+            _provider.KeyDel(cacheKey0);
+            _provider.KeyDel(cacheKey1);
+            _provider.KeyDel(cacheKey2);
+        }
+
+        [Fact]
+        protected virtual async Task PfMergeAsync_Should_Succeed()
+        {
+            var cacheKey0 = $"{_nameSpace}-pfmergeasync-{Guid.NewGuid().ToString()}";
+            var cacheKey1 = $"{_nameSpace}-pfmergeasync-{Guid.NewGuid().ToString()}";
+            var cacheKey2 = $"{_nameSpace}-pfmergeasync-{Guid.NewGuid().ToString()}";
+
+            var res1 = await _provider.PfAddAsync<string>(cacheKey1, new List<string> { "foo", "bar", "zap", "a" });
+            var res2 = await _provider.PfAddAsync<string>(cacheKey2, new List<string> { "a", "b", "c", "foo" });
+            Assert.True(res1);
+            Assert.True(res2);
+
+
+            var flag = await _provider.PfMergeAsync(cacheKey0, new List<string> { cacheKey1, cacheKey2 });
+            Assert.True(flag);
+
+            var count = await _provider.PfCountAsync(new List<string> { cacheKey0 });
+
+            Assert.Equal(6, count);
+
+            await _provider.KeyDelAsync(cacheKey0);
+            await _provider.KeyDelAsync(cacheKey1);
+            await _provider.KeyDelAsync(cacheKey2);
+        }
+        #endregion
+
+        #region Geo
+        [Fact]
+        protected virtual void GeoAdd_And_GeoDist_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-geoadd-{Guid.NewGuid().ToString()}";
+
+            var res = _provider.GeoAdd(cacheKey, new List<(double longitude, double latitude, string member)> { (13.361389, 38.115556, "Palermo"), (15.087269, 37.502669, "Catania") });
+
+            Assert.Equal(2, res);
+
+            var dist = _provider.GeoDist(cacheKey, "Palermo", "Catania");
+
+            // precision？
+            Assert.Equal(166274.1516, dist);
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task GeoAddAsync_And_GeoDistAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-geoaddasync-{Guid.NewGuid().ToString()}";
+
+            var res = await _provider.GeoAddAsync(cacheKey, new List<(double longitude, double latitude, string member)> { (13.361389, 38.115556, "Palermo"), (15.087269, 37.502669, "Catania") });
+
+            Assert.Equal(2, res);
+
+            var dist = await _provider.GeoDistAsync(cacheKey, "Palermo", "Catania");
+
+            // precision？
+            Assert.Equal(166274.1516, dist);
+
+            await _provider.KeyDelAsync(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void GeoAdd_And_GeoHash_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-geohash-{Guid.NewGuid().ToString()}";
+
+            var res = _provider.GeoAdd(cacheKey, new List<(double longitude, double latitude, string member)> { (13.361389, 38.115556, "Palermo"), (15.087269, 37.502669, "Catania") });
+
+            Assert.Equal(2, res);
+
+            var hash = _provider.GeoHash(cacheKey, new List<string> { "Palermo", "Catania" });
+
+            Assert.Equal(2, hash.Count);
+            Assert.Contains("sqc8b49rny0", hash);
+            Assert.Contains("sqdtr74hyu0", hash);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task GeoAddAsync_And_GeoHashAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-geohashasync-{Guid.NewGuid().ToString()}";
+
+            var res = await _provider.GeoAddAsync(cacheKey, new List<(double longitude, double latitude, string member)> { (13.361389, 38.115556, "Palermo"), (15.087269, 37.502669, "Catania") });
+
+            Assert.Equal(2, res);
+
+            var hash = await _provider.GeoHashAsync(cacheKey, new List<string> { "Palermo", "Catania" });
+
+            Assert.Equal(2, hash.Count);
+            Assert.Contains("sqc8b49rny0", hash);
+            Assert.Contains("sqdtr74hyu0", hash);
+
+            await _provider.KeyDelAsync(cacheKey);
+        }
+
+        [Fact]
+        protected virtual void GeoAdd_And_GeoPos_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-geohash-{Guid.NewGuid().ToString()}";
+
+            var res = _provider.GeoAdd(cacheKey, new List<(double longitude, double latitude, string member)> { (13.361389, 38.115556, "Palermo"), (15.087269, 37.502669, "Catania") });
+
+            Assert.Equal(2, res);
+
+            var pos = _provider.GeoPos(cacheKey, new List<string> { "Palermo", "Catania", "NonExisting" });
+
+            Assert.Equal(3, pos.Count);
+            Assert.Contains(13.36138933897018433m, pos.Where(x => x.HasValue).Select(x => x.Value.longitude));
+            Assert.Contains(15.08726745843887329m, pos.Where(x => x.HasValue).Select(x => x.Value.longitude));
+            Assert.Contains(null, pos);
+
+            _provider.KeyDel(cacheKey);
+        }
+
+        [Fact]
+        protected virtual async Task GeoAddAsync_And_GeoPosAsync_Should_Succeed()
+        {
+            var cacheKey = $"{_nameSpace}-geohashasync-{Guid.NewGuid().ToString()}";
+
+            var res = await _provider.GeoAddAsync(cacheKey, new List<(double longitude, double latitude, string member)> { (13.361389, 38.115556, "Palermo"), (15.087269, 37.502669, "Catania") });
+
+            Assert.Equal(2, res);
+
+            var pos = await _provider.GeoPosAsync(cacheKey, new List<string> { "Palermo", "Catania", "NonExisting" });
+
+            Assert.Equal(3, pos.Count);
+            Assert.Contains(13.36138933897018433m, pos.Where(x => x.HasValue).Select(x => x.Value.longitude));
+            Assert.Contains(15.08726745843887329m, pos.Where(x => x.HasValue).Select(x => x.Value.longitude));
+            Assert.Contains(null, pos);
+
+            await _provider.KeyDelAsync(cacheKey);
         }
         #endregion
     }

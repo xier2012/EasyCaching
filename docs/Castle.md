@@ -1,12 +1,12 @@
 # Caching Intercept via Castle
 
-EasyCaching.Interceptor.Castle is a caching intercept library which is based on **EasyCaching.Core** and **Castle.Core**.
+EasyCaching.Interceptor.Castle is a caching interceptor library which is based on **EasyCaching.Core** and **Castle.Core**.
 
 When using this library, it can help us to separate the operation between business logic and caching logic.
 
 # How to use ?
 
-Before using **EasyCaching.Interceptor.Castle**, we should specify which type of caching you want to use!! In this document, we will use EasyCaching.InMemory for example.
+Before using **EasyCaching.Interceptor.Castle**, we should specify which type of caching you want to use!! In this example, we will use EasyCaching.InMemory.
 
 ## 1. Install the package via Nuget
 
@@ -15,45 +15,40 @@ Install-Package EasyCaching.Interceptor.Castle
 
 Install-Package EasyCaching.InMemory
 ```
+
 ## 2. Define services
 
-### 2.1 Define the interface
-
-Just define a regular interface.
+Define interface first.
 
 ```csharp
 public interface IDemoService 
-{        
+{
+    [EasyCachingAble(Expiration = 10)]
     string GetCurrentUtcTime();
 
+    [EasyCachingPut(CacheKeyPrefix = "Castle")]
     string PutSomething(string str);
 
+    [EasyCachingEvict(IsBefore = true)]
     void DeleteSomething(int id);
 }
 ```
 
-This implement must inherit **IEasyCaching** by default. And we need to add `EasyCachingAble`,`EasyCachingPut` and `EasyCachingEvict` to the methods that we want to simplify the caching operation.
-
-- EasyCachingAble , Read from cached items
-- EasyCachingPut , Update the cached item
-- EasyCachingEvict , Remove one cached item or multi cached items
+Just implement the above interface.
 
 ```csharp
-public class DemoService : IDemoService ,  IEasyCaching
+public class DemoService : IDemoService
 {
-    [EasyCachingEvict(IsBefore = true)]
     public void DeleteSomething(int id)
     {
         System.Console.WriteLine("Handle delete something..");
     }
 
-    [EasyCachingAble(Expiration = 10)]
     public string GetCurrentUtcTime()
     {
         return System.DateTime.UtcNow.ToString();
     }
 
-    [EasyCachingPut(CacheKeyPrefix = "Castle")]
     public string PutSomething(string str)
     {
         return str;
@@ -63,7 +58,90 @@ public class DemoService : IDemoService ,  IEasyCaching
 
 ## 3. Config in Startup class
 
-```csharp
+There are some difference between .NET Core 2.x and .NET Core 3.1.
+
+### .NET Core 3.1
+
+Need to use EasyCaching above version 0.8.0
+
+First, add the use of UseServiceProviderFactory to the Program.
+
+```cs
+// for castle
+using Autofac.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        CreateHostBuilder(args).Build().Run();
+    }
+
+    public static IHostBuilder CreateHostBuilder(string[] args) =>
+        Host.CreateDefaultBuilder(args)
+            .ConfigureWebHostDefaults(webBuilder =>
+            {
+                webBuilder.UseStartup<Startup>();
+            })
+            // for castle
+            .UseServiceProviderFactory(new AutofacServiceProviderFactory())
+        ;
+}
+```
+
+Second, you need to add the ConfigureContainer method to the Startup.
+
+```cs
+public class Startup
+{
+    public Startup(IConfiguration configuration)
+    {
+        Configuration = configuration;
+    }
+
+    public IConfiguration Configuration { get; }
+
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddScoped<IAspectCoreService, AspectCoreService>();
+
+        services.AddEasyCaching(options =>
+        {
+            options.UseInMemory("m1");
+        });
+
+        services.AddControllers();
+
+        services.AddTransient<IDemoService, DemoService>();
+        // for Castle  
+        services.ConfigureCastleInterceptor(options => options.CacheProviderName = "m1");
+    }
+
+     // for castle
+     public void ConfigureContainer(ContainerBuilder builder)
+     {
+        builder.ConfigureCastleInterceptor();
+     } 
+
+     public void Configure(IApplicationBuilder app)
+     {           
+         app.UseRouting();
+         app.UseEndpoints(endpoints =>
+         {
+            endpoints.MapControllers();
+         });
+     }
+}
+```
+
+### .NET Core 2.x
+
+EasyCaching above version 0.8.0 no longer supports .NET Core 2.x
+
+
+```cs
 public class Startup
 {
    //others...
@@ -72,11 +150,19 @@ public class Startup
     {
         services.AddScoped<IDemoService, DemoService>();
 
-        services.AddDefaultInMemoryCache();
+        services.AddEasyCaching(option =>
+        {
+            // use memory cache
+            option.UseInMemory("default");
+        });
 
         services.AddMvc();
 
-        return services.ConfigureCastleInterceptor();
+        return services.ConfigureCastleInterceptor(options =>
+        {
+            // Specify which provider you want to use
+            options.CacheProviderName = "default";
+        });
     } 
 }
 ```
@@ -101,7 +187,7 @@ public class ValuesController : Controller
     {
         if(type == 1)
         {
-            return _service.GetCurrentUtcTime();   
+            return _service.GetCurrentUtcTime();
         }
         else if(type == 2)
         {
@@ -115,7 +201,7 @@ public class ValuesController : Controller
         else
         {
             return "other";
-        }                
+        }
     }
 }
 ```

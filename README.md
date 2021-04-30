@@ -1,6 +1,6 @@
 ![](media/easycaching-icon.png?raw=true)
 
-EasyCaching is an open source caching library that contains basic usages and some advanced usages of caching which can help us to handle caching more easier!
+EasyCaching is an open source caching library that contains basic usages and some advanced usages of caching which can help us to handle caching more easily!
 
 [![Coverage Status](https://coveralls.io/repos/github/catcherwong/EasyCaching/badge.svg?branch=master)](https://coveralls.io/github/catcherwong/EasyCaching?branch=master)
 [![Member project of .NET Core Community](https://img.shields.io/badge/member%20project%20of-NCC-9e20c9.svg)](https://github.com/dotnetcore)
@@ -16,49 +16,33 @@ EasyCaching is an open source caching library that contains basic usages and som
 
 ## Nuget Packages
 
-### Core
-
 | Package Name |  Version | Downloads
 |--------------|  ------- | ----
 | EasyCaching.Core | ![](https://img.shields.io/nuget/v/EasyCaching.Core.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Core.svg)
-
-### Provider
-
-| Package Name |  Version | Downloads
-|--------------|  ------- | ----
 | EasyCaching.InMemory | ![](https://img.shields.io/nuget/v/EasyCaching.InMemory.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.InMemory.svg)
 | EasyCaching.Redis | ![](https://img.shields.io/nuget/v/EasyCaching.Redis.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Redis.svg)
 | EasyCaching.Memcached | ![](https://img.shields.io/nuget/v/EasyCaching.Memcached.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Memcached.svg)
 | EasyCaching.SQLite | ![](https://img.shields.io/nuget/v/EasyCaching.SQLite.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.SQLite.svg)
 | EasyCaching.HybridCache  | ![](https://img.shields.io/nuget/v/EasyCaching.HybridCache.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.HybridCache.svg)
 | EasyCaching.CSRedis  | ![](https://img.shields.io/nuget/v/EasyCaching.CSRedis.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.CSRedis.svg)
-
-### Interceptor
-
-| Package Name |  Version | Downloads
-|--------------|  ------- | ----
 | EasyCaching.Interceptor.Castle | ![](https://img.shields.io/nuget/v/EasyCaching.Interceptor.Castle.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Interceptor.Castle.svg)
 | EasyCaching.Interceptor.AspectCore | ![](https://img.shields.io/nuget/v/EasyCaching.Interceptor.AspectCore.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Interceptor.AspectCore.svg)
-
-### Serializer
-
-| Package Name |  Version | Downloads
-|--------------|  ------- | ----
 | EasyCaching.Serialization.MessagePack | ![](https://img.shields.io/nuget/v/EasyCaching.Serialization.MessagePack.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Serialization.MessagePack.svg)
 | EasyCaching.Serialization.Json | ![](https://img.shields.io/nuget/v/EasyCaching.Serialization.Json.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Serialization.Json.svg)
 | EasyCaching.Serialization.Protobuf | ![](https://img.shields.io/nuget/v/EasyCaching.Serialization.Protobuf.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Serialization.Protobuf.svg)
-
-### Others
-
-| Package Name |  Version | Downloads
-|--------------|  ------- | ----
+| EasyCaching.Bus.RabbitMQ | ![](https://img.shields.io/nuget/v/EasyCaching.Bus.RabbitMQ.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Bus.RabbitMQ.svg)
+| EasyCaching.Bus.Redis | ![](https://img.shields.io/nuget/v/EasyCaching.Bus.Redis.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Bus.Redis.svg)
+| EasyCaching.Bus.CSRedis | ![](https://img.shields.io/nuget/v/EasyCaching.Bus.CSRedis.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Bus.CSRedis.svg)
 | EasyCaching.ResponseCaching | ![](https://img.shields.io/nuget/v/EasyCaching.ResponseCaching.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.ResponseCaching.svg)
+| EasyCaching.Disk | ![](https://img.shields.io/nuget/v/EasyCaching.Disk.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Disk.svg)
+| EasyCaching.LiteDB | ![](https://img.shields.io/nuget/v/EasyCaching.LiteDB.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.LiteDB.svg)
+| EasyCaching.Serialization.SystemTextJson | ![](https://img.shields.io/nuget/v/EasyCaching.Serialization.SystemTextJson.svg) | ![](https://img.shields.io/nuget/dt/EasyCaching.Serialization.SystemTextJson.svg)
 
 ## Basic Usages 
 
 ### Step 1 : Install the package
 
-Choose one kinds of caching type that you needs and install it via Nuget.
+Choose caching provider that you need and install it via Nuget.
 
 ```
 Install-Package EasyCaching.InMemory
@@ -67,11 +51,11 @@ Install-Package EasyCaching.SQLite
 Install-Package EasyCaching.Memcached
 ```
 
-### Step 2 : Config in your Startup class
+### Step 2 : Configure Startup class
 
-Different types of caching hvae their own way to config.
+Each caching provider has it's own configuration options.
 
-Here is a sample show you how to config.
+Here is a sample configuration for InMemory and Redis caching provider.
 
 ```csharp
 public class Startup
@@ -81,13 +65,33 @@ public class Startup
     public void ConfigureServices(IServiceCollection services)
     {
         //configuration
-        services.AddEasyCaching(option=> 
+        services.AddEasyCaching(options => 
         {
             //use memory cache that named default
-            option.UseInMemory("default");
+            options.UseInMemory("default");
+
+            // // use memory cache with your own configuration
+            // options.UseInMemory(config => 
+            // {
+            //     config.DBConfig = new InMemoryCachingOptions
+            //     {
+            //         // scan time, default value is 60s
+            //         ExpirationScanFrequency = 60, 
+            //         // total count of cache items, default value is 10000
+            //         SizeLimit = 100 
+            //     };
+            //     // the max random second will be added to cache's expiration, default value is 120
+            //     config.MaxRdSecond = 120;
+            //     // whether enable logging, default is false
+            //     config.EnableLogging = false;
+            //     // mutex key's alive time(ms), default is 5000
+            //     config.LockMs = 5000;
+            //     // when mutex key alive, it will sleep some time, default is 300
+            //     config.SleepMs = 300;
+            // }, "m2");
 
             //use redis cache that named redis1
-            option.UseRedis(config => 
+            options.UseRedis(config => 
             {
                 config.DBConfig.Endpoints.Add(new ServerEndPoint("127.0.0.1", 6379));
             }, "redis1")
@@ -98,7 +102,7 @@ public class Startup
 }
 ```
 
-###  Step 3 : Write code in you controller 
+###  Step 3 : Write code in your controller 
 
 ```csharp
 [Route("api/[controller]")]
@@ -136,7 +140,13 @@ public class ValuesController : Controller
 
 ## Documentation
 
-For more helpful information about EasyCaching, please click [here](http://easycaching.readthedocs.io/en/latest/) for EasyCaching's documentation. 
+Detailed EasyCaching documentation can be found [here](http://easycaching.readthedocs.io/en/latest/).
+
+## Extension Libs
+
+- [EasyCaching.Extensions](https://github.com/yrinleung/EasyCaching.Extensions)
+
+- [EasyCaching.Extensions.EasyCompressor](https://github.com/mjebrahimi/EasyCompressor/blob/master/src/EasyCaching.Extensions.EasyCompressor/README.md)
 
 ## Examples
 
@@ -144,72 +154,15 @@ See [sample](https://github.com/catcherwong/EasyCaching/tree/master/sample)
 
 ## Todo List
 
-### Caching Providers
-
-- [x] Memory
-- [x] Redis(Based on [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis))
-- [x] Redis(Based on [csredis](https://github.com/2881099/csredis))
-- [x] SQLite
-- [x] Memcached
-- [x] Hybrid(Combine local caching and distributed caching)
-- [ ] Disk
-- [ ] Others...
-
-### Basic Caching API
-
-- [x] Get/GetAsync(with data retriever)
-- [x] Get/GetAsync(without data retriever)
-- [x] Set/SetAsync
-- [x] Remove/RemoveAsync
-- [x] Refresh/RefreshAsync
-- [x] RemoveByPrefix/RemoveByPrefixAsync
-- [x] SetAll/SetAllAsync
-- [x] GetAll/GetAllAsync
-- [x] GetByPrefix/GetByPrefixAsync
-- [x] RemoveAll/RemoveAllAsync
-- [x] GetCount
-- [x] Flush/FlushAsync
-- [x] TrySet/TrySetAsync
-- [ ] Others...
-
-### Serializer Extensions 
-
-- [x] BinaryFormatter
-- [x] MessagePack
-- [x] Json
-- [x] ProtoBuf
-- [ ] Others...
-
-### Caching Interceptor
-
-- [x] AspectCore
-- [x] Castle
-- [ ] Others ..
-    
-1. EasyCachingAble
-2. EasyCachingPut
-3. EasyCachingEvict
-
-> Note: Not support Hybird Caching provider yet.
-
-### Caching Bus
-
-- [x] Redis (not release yet)
-- [x] RabbitMQ (not release yet)
-
-### Others
-
-- [x] Configuration
-- [x] Caching Region (one region with an instance of provider)
-- [x] Caching Statistics
-- [ ] UI Manager
-- [x] Logger
-- [ ] Caching Warm Up 
-- [ ] ...
+See [ToDo List](docs/ToDoList.md)
 
 ## Contributing
 
 Pull requests, issues and commentary! 
+
+Also can join our QQ group.
+
+![](media/qqgroup.jpg?raw=true)
 
 ## License
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fdotnetcore%2FEasyCaching.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Fdotnetcore%2FEasyCaching?ref=badge_large)

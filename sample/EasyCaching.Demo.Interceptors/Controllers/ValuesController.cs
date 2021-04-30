@@ -38,6 +38,11 @@
                 var res = _aService.GetDemo(111);
                 return $"{res.Id}-{res.Name}-{res.CreateTime}";
             }
+            else if (type == 5)
+            {
+                var res = _aService.GetData();
+                return Newtonsoft.Json.JsonConvert.SerializeObject(res);
+            }
             else
             {
                 return "wait";
@@ -56,6 +61,11 @@
             {
                 var res = await _aService.GetDemoAsync(999);
                 return $"{res.Id}-{res.Name}-{res.CreateTime}";
+            }
+            else if (type == 3)
+            {
+                var res = await _aService.GetDemoListAsync(999);
+                return $"{res.Count}";
             }
             else
             {
@@ -103,6 +113,11 @@
             {
                 var res = await _cService.GetDemoAsync(999);
                 return $"{res.Id}-{res.Name}-{res.CreateTime}";
+            }
+            else if (type == 3)
+            {
+                var res = await _aService.GetDemoListAsync(999);
+                return $"{res.Count}";
             }
             else
             {

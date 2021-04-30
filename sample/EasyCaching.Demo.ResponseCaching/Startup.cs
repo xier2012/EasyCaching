@@ -1,13 +1,13 @@
 ﻿namespace EasyCaching.Demo.ResponseCaching
 {
+    using EasyCaching.Core;
     using EasyCaching.InMemory;
-    using EasyCaching.ResponseCaching;                 
+    using EasyCaching.ResponseCaching;
     using Microsoft.AspNetCore.Builder;
     using Microsoft.AspNetCore.Hosting;
-    using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
-    
+
     public class Startup
     {
         public Startup(IConfiguration configuration)
@@ -19,21 +19,23 @@
 
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
+            services.AddControllersWithViews();
 
-            services.AddEasyCachingResponseCaching();
-            services.AddDefaultInMemoryCache();
+            services.AddEasyCaching(x => { x.UseInMemory(); });
+            services.AddEasyCachingResponseCaching(EasyCachingConstValue.DefaultInMemoryName);
         }
 
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             app.UseEasyCachingResponseCaching();
+            app.UseStaticFiles();
 
-            app.UseMvc(routes =>
+            app.UseRouting();
+            app.UseEndpoints(endpoints =>
             {
-                routes.MapRoute(
+                endpoints.MapControllerRoute(
                     name: "default",
-                    template: "{controller=Home}/{action=Index}/{id?}");
+                    pattern: "{controller=Home}/{action=Index}/{id?}");
             });
         }
     }

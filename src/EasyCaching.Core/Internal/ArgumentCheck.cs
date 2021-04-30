@@ -15,10 +15,25 @@
         /// </summary>
         /// <param name="argument">Argument.</param>
         /// <param name="argumentName">Argument name.</param>
-        /// <exception cref="ArgumentNullException">
+        /// <exception cref="ArgumentNullException" />
         public static void NotNull(object argument, string argumentName)
         {
             if (argument == null)
+            {
+                throw new ArgumentNullException(argumentName);
+            }
+        }
+        
+        /// <summary>
+        /// Validates that <paramref name="argument"/> is not null , otherwise throws an exception.
+        /// </summary>
+        /// <param name="argument">Argument.</param>
+        /// <param name="argumentName">Argument name.</param>
+        /// <param name="allowNulls">Allow nulls.</param>
+        /// <exception cref="ArgumentNullException" />
+        public static void NotNull(object argument, string argumentName, bool allowNulls)
+        {
+            if (argument == null && !allowNulls)
             {
                 throw new ArgumentNullException(argumentName);
             }
@@ -29,7 +44,7 @@
         /// </summary>
         /// <param name="argument">Argument.</param>
         /// <param name="argumentName">Argument name.</param>
-        /// <exception cref="ArgumentNullException">
+        /// <exception cref="ArgumentNullException" />
         public static void NotNullOrWhiteSpace(string argument, string argumentName)
         {
             if (string.IsNullOrWhiteSpace(argument))

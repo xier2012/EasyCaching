@@ -1,9 +1,10 @@
-namespace EasyCaching.UnitTests.Infrastructure
+﻿namespace EasyCaching.UnitTests.Infrastructure
 {
+    using EasyCaching.Core.Interceptor;
+    using EasyCaching.UnitTests.CustomInterceptors;
     using System;
     using System.Collections.Generic;
     using System.Threading.Tasks;
-    using EasyCaching.Core.Interceptor;
 
     public interface ICastleExampleService
     {
@@ -14,6 +15,9 @@ namespace EasyCaching.UnitTests.Infrastructure
 
         [EasyCachingPut(CacheKeyPrefix = "CastleExample")]
         string PutTest(int num, string str = "123");
+
+        [EasyCachingPut(CacheKeyPrefix = "CastleExample", CacheProviderName = "second")]
+        string PutSwitchProviderTest(int num, string str = "123");
 
         [EasyCachingEvict(CacheKeyPrefix = "CastleExample")]
         string EvictTest();
@@ -30,6 +34,17 @@ namespace EasyCaching.UnitTests.Infrastructure
         [EasyCachingPut(CacheKeyPrefix = "CastleExample")]
         Task<string> PutTestAsync(int num, string str = "123");
 
+        [EasyCachingAble(Expiration = 1)]
+        Task<string> AbleTestWithNullValueAsync();
+
+        [CustomCachingAble]
+        string CustomAbleAttributeTest();
+
+        [CustomCachingPut]
+        string CustomPutAttributeTest(int num);
+
+        [CustomCachingEvict]
+        string CustomEvictAttributeTest();
     }
 
     public class CastleExampleService : ICastleExampleService//, IEasyCaching
@@ -58,6 +73,10 @@ namespace EasyCaching.UnitTests.Infrastructure
         {
             return $"PutTest-{num}";
         }
+        public string PutSwitchProviderTest(int num, string str)
+        {
+            return PutTest(num, str);
+        }
 
         public async Task<string> AbleTestAsync()
         {
@@ -73,6 +92,26 @@ namespace EasyCaching.UnitTests.Infrastructure
         {
             return await Task.FromResult($"PutTestAsync-{num}");
         }
+
+        public Task<string> AbleTestWithNullValueAsync()
+        {
+            return Task.FromResult<string>(null);
+        }
+
+        public string CustomAbleAttributeTest()
+        {
+            return GetCurrentUTC();
+        }
+
+        public string CustomPutAttributeTest(int num)
+        {
+            return $"CustomPutTest-{num}";
+        }
+
+        public string CustomEvictAttributeTest()
+        {
+            return "CustomEvictTest";
+        }
     }
 
     public interface IAspectCoreExampleService //: IEasyCaching
@@ -84,6 +123,9 @@ namespace EasyCaching.UnitTests.Infrastructure
 
         [EasyCachingEvict(CacheKeyPrefix = "AspectCoreExample")]
         string EvictTest();
+
+        [EasyCachingEvict(CacheKeyPrefix = "AspectCoreExample", CacheProviderName = "second")]
+        string EvictSwitchProviderTest();
 
         [EasyCachingEvict(CacheKeyPrefix = "AspectCoreExample", IsAll = true)]
         string EvictAllTest();
@@ -108,6 +150,18 @@ namespace EasyCaching.UnitTests.Infrastructure
 
         [EasyCachingAble(Expiration = 1)]
         Task<List<Model>> AbleListTest();
+
+        [EasyCachingAble(Expiration = 1)]
+        Task<string> AbleTestWithNullValueAsync();
+
+        [CustomCachingAble]
+        string CustomAbleAttributeTest();
+
+        [CustomCachingPut]
+        string CustomPutAttributeTest(int num);
+
+        [CustomCachingEvict]
+        string CustomEvictAttributeTest();
     }
 
     public class AspectCoreExampleService : IAspectCoreExampleService
@@ -120,6 +174,10 @@ namespace EasyCaching.UnitTests.Infrastructure
         public string EvictTest()
         {
             return "EvictTest";
+        }
+        public string EvictSwitchProviderTest()
+        {
+            return EvictTest();
         }
 
         public string GetCurrentUTC()
@@ -168,6 +226,26 @@ namespace EasyCaching.UnitTests.Infrastructure
         {
             var list = new List<Model> { new Model { Prop = "prop" } };
             return Task.FromResult(list);
+        }
+
+        public Task<string> AbleTestWithNullValueAsync()
+        {
+            return Task.FromResult<string>(null);
+        }
+
+        public string CustomAbleAttributeTest()
+        {
+            return GetCurrentUTC();
+        }
+
+        public string CustomPutAttributeTest(int num)
+        {
+            return $"CustomPutTest-{num}";
+        }
+
+        public string CustomEvictAttributeTest()
+        {
+            return "CustomEvictTest";
         }
     }
 }

@@ -2,6 +2,7 @@
 {
     using System.Threading.Tasks;
     using EasyCaching.Core.Interceptor;
+    using ProtoBuf;
 
     public interface IAspectCoreService //: EasyCaching.Core.Internal.IEasyCaching
     {
@@ -21,7 +22,14 @@
         Task<Demo> GetDemoAsync(int id);
 
         [EasyCachingAble(Expiration = 10)]
+        Task<System.Collections.Generic.List<Demo>> GetDemoListAsync(int id);
+        
+
+        [EasyCachingAble(Expiration = 10)]
         Demo GetDemo(int id);
+
+        [EasyCachingAble(Expiration = 10)]
+        object GetData();
     }
 
     public class AspectCoreService : IAspectCoreService
@@ -38,12 +46,17 @@
 
         public Demo GetDemo(int id)
         {
-             return new Demo { Id = id, CreateTime = System.DateTime.Now, Name = "catcher" };
+            return new Demo { Id = id, CreateTime = System.DateTime.Now, Name = "catcher" };
         }
 
         public Task<Demo> GetDemoAsync(int id)
         {
-            return Task.FromResult(new Demo{ Id = id, CreateTime = System.DateTime.Now, Name = "catcher"});
+            return Task.FromResult(new Demo { Id = id, CreateTime = System.DateTime.Now, Name = "catcher" });
+        }
+
+        public Task<System.Collections.Generic.List<Demo>> GetDemoListAsync(int id)
+        {
+            return Task.FromResult(new System.Collections.Generic.List<Demo>() { new Demo { Id = id, CreateTime = System.DateTime.Now, Name = "catcher" } });
         }
 
         public async Task<string> GetUtcTimeAsync()
@@ -51,18 +64,31 @@
             return await Task.FromResult<string>(System.DateTimeOffset.UtcNow.ToString());
         }
 
+        public async Task DeleteSomethingAsync(int id)
+        {
+            await Task.Run(() => System.Console.WriteLine("Handle delete something.."));
+        }
+
         public string PutSomething(string str)
         {
             return str;
         }
 
+        public object GetData()
+        {
+            return new { x = System.DateTimeOffset.Now.ToUnixTimeSeconds() };
+        }
     }
 
+    [ProtoContract]
     [System.Serializable]
     public class Demo
     {
+        [ProtoMember(1)]
         public int Id { get; set; }
+        [ProtoMember(2)]
         public string Name { get; set; }
+        [ProtoMember(3)]
         public System.DateTime CreateTime { get; set; }
     }
 }

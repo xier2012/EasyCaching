@@ -1,30 +1,41 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="../../build/version.props" />
   <Import Project="../../build/releasenotes.props" />
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <Owners>Catcher Wong</Owners>
-    <Authors>Catcher Wong</Authors>    
-    <Version>$(EasyCachingMemcachedPackageVersion)</Version>
-    <Description>      
+    <Owners>ncc;Catcher Wong</Owners>
+    <Authors>ncc;Catcher Wong</Authors>
+    <VersionPrefix>$(EasyCachingMemcachedPackageVersion)</VersionPrefix>
+    <VersionSuffix></VersionSuffix>
+    <Description>
       A simple distributed caching provider based on EnyimMemcachedCore.
     </Description>
     <PackageTags>Memcached,DistributedCache,Caching,Cache</PackageTags>
     <PackageProjectUrl>https://github.com/dotnetcore/EasyCaching</PackageProjectUrl>
-    <PackageLicenseUrl>https://github.com/dotnetcore/EasyCaching/blob/master/LICENSE</PackageLicenseUrl>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <RepositoryUrl>https://github.com/dotnetcore/EasyCaching</RepositoryUrl>
     <ProjectUrl>https://github.com/dotnetcore/EasyCaching</ProjectUrl>
-    <PackageIconUrl>https://raw.githubusercontent.com/dotnetcore/EasyCaching/master/media/nuget-icon.png</PackageIconUrl>
-    <PackageReleaseNotes>      
+    <PackageIcon>nuget-icon.png</PackageIcon>
+    <PackageReleaseNotes>
       $(EasyCachingMemcachedPackageNotes)
     </PackageReleaseNotes>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../LICENSE" Pack="true" Visible="false" PackagePath="" />
+    <None Include="../../media/nuget-icon.png" Pack="true" Visible="false" PackagePath="" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\EasyCaching.Core\EasyCaching.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="EnyimMemcachedCore" Version="2.1.10" />
+    <PackageReference Include="EnyimMemcachedCore" Version="2.4.3" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Configurations\" />

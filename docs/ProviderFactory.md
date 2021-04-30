@@ -1,6 +1,6 @@
 # EasyCachingProviderFactory
 
-`EasyCachingProviderFactory` is a new feature after v0.4.0 which provides a factory to get providers 
+`EasyCachingProviderFactory` is a new feature which was implemented in v0.4.0. It provides a factory to get providers 
 that we register in startup.
 
 # Why ?
@@ -14,7 +14,9 @@ After releasing v0.4.0 of EasyCaching, we can deal with this scenario.
 
 This usage of `EasyCachingProviderFactory` is similar with `HttpClientFactory`.
 
-Here use two InMemory caching provders and two Redis caching providers to show.
+There are two types of providers(`IEasyCachingProvider` and `IRedisCachingProvider`) that `EasyCachingProviderFactory` can create.
+
+Following examples uses two InMemory caching provders and two Redis caching providers.
 
 ## 1. Install the packages via Nuget
 
@@ -30,30 +32,33 @@ Install-Package EasyCaching.Redis
 public void ConfigureServices(IServiceCollection services)  
 {  
     //other ..  
-      
-    //configure the first in-memory caching provider  
-    services.AddDefaultInMemoryCacheWithFactory("inmemory1");  
-      
-    //configure the second in-memory caching provider  
-    services.AddDefaultInMemoryCacheWithFactory("inmemory2");  
-    
-    //configure the first redis caching provider  
-    services.AddDefaultRedisCacheWithFactory("redis1",option =>  
-    {  
-        option.DBConfig.Endpoints.Add(new ServerEndPoint("127.0.0.1", 6379));  
-    });  
-  
-    //configure the second redis caching provider  
-    services.AddDefaultRedisCacheWithFactory("redis2", option =>  
-    {  
-        option.DBConfig.Endpoints.Add(new ServerEndPoint("127.0.0.1", 6380));  
-    });  
+
+    services.AddEasyCaching(option=> 
+    {
+        //use memory cache
+        option.UseInMemory("inmemory1");
+
+        //use memory cache
+        option.UseInMemory("inmemory2");
+
+        //use redis cache
+        option.UseRedis(config => 
+        {
+            config.DBConfig.Endpoints.Add(new ServerEndPoint("127.0.0.1", 6379));
+        }, "redis1");
+
+        //use redis cache
+        option.UseRedis(config => 
+        {
+            config.DBConfig.Endpoints.Add(new ServerEndPoint("127.0.0.1", 6380));
+        }, "redis2");
+    });
 }  
 ```
 
 ### 3. Call the IEasyCachingProviderFactory
 
-The following code show how to use IEasyCachingProviderFactory in ASP.NET Core Web API.
+Following code shows how to use IEasyCachingProviderFactory in ASP.NET Core Web API.
 
 ```csharp
 [Route("api/[controller]")]  
@@ -112,6 +117,22 @@ public class ValuesController : Controller
         var res = provider.Get("named-provider", () => val, TimeSpan.FromMinutes(1));  
         Console.WriteLine($"Type=redis2,Key=named-provider,Value={res},Time:{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}");  
         return $"cached value : {res}";  
+    }  
+
+    // GET api/values/redis3 
+    [HttpGet]  
+    [Route("redis3")]  
+    public string GetRedis3()  
+    {  
+        var redis1 = factory.GetRedisProvider("redis1");
+        var redis2 = factory.GetRedisProvider("redis2");
+
+         _redis1.StringSet("keyredis1", "val");
+
+        var res1 = _redis1.StringGet("keyredis1");
+        var res2 = _redis2.StringGet("keyredis1");
+
+        return $"redis1 cached value: {res1}, redis2 cached value : {res2}";  
     }  
 }  
 ```

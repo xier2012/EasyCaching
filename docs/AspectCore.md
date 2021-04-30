@@ -1,12 +1,12 @@
 # Caching Intercept via AspectCore
 
-EasyCaching.Interceptor.AspectCore is a caching intercept library which is based on **EasyCaching.Core** and **AspectCore**.
+EasyCaching.Interceptor.AspectCore is a caching interceptor library which is based on **EasyCaching.Core** and **AspectCore**.
 
-When using this library, it can help us to separate the operation between business logic and caching logic.
+When using this library, it can help us to separate operations between business logic and caching logic.
 
 # How to use ?
 
-Before using **EasyCaching.Interceptor.AspectCore**, we should specify which type of caching you want to use!! In this document, we will use EasyCaching.InMemory for example.
+Before using **EasyCaching.Interceptor.AspectCore**, you should specify which type of caching you want to use!! In following example, we will use EasyCaching.InMemory.
 
 ## 1. Install the package via Nuget
 
@@ -15,18 +15,13 @@ Install-Package EasyCaching.Interceptor.AspectCore
 
 Install-Package EasyCaching.InMemory
 ```
+
 ## 2. Define services
 
-### 2.1 Define the interface
-
-This interface must inherit **IEasyCaching** by default. And we need to add `EasyCachingAble`,`EasyCachingPut` and `EasyCachingEvict` to the methods that we want to simplify the caching operation.
-
-- EasyCachingAble , Read from cached items
-- EasyCachingPut , Update the cached item
-- EasyCachingEvict , Remove one cached item or multi cached items
+Define interface first.
 
 ```csharp
-public interface IDemoService : EasyCaching.Core.Internal.IEasyCaching
+public interface IDemoService
 {
     [EasyCachingAble(Expiration = 10)]
     string GetCurrentUtcTime();
@@ -63,25 +58,111 @@ public class DemoService : IDemoService
 
 ## 3. Config in Startup class
 
+There are some difference between .NET Core 2.x and .NET Core 3.1.
+
+### .NET Core 3.1
+
+Need to use EasyCaching above version 0.8.0
+
+First, add the use of UseServiceProviderFactory to the Program.
+
+```cs
+// for aspcectcore
+using AspectCore.Extensions.Hosting;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        CreateHostBuilder(args).Build().Run();
+    }
+
+    public static IHostBuilder CreateHostBuilder(string[] args) =>
+        Host.CreateDefaultBuilder(args)
+            .ConfigureWebHostDefaults(webBuilder =>
+            {
+                webBuilder.UseStartup<Startup>();
+            })
+            // for aspcectcore
+            .UseServiceContext()
+        ;
+}
+```
+
+Second, you need to add the ConfigureContainer method to the Startup.
+
+```cs
+public class Startup
+{
+    public Startup(IConfiguration configuration)
+    {
+        Configuration = configuration;
+    }
+
+    public IConfiguration Configuration { get; }
+
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddScoped<IAspectCoreService, AspectCoreService>();
+
+        services.AddEasyCaching(options =>
+        {
+            options.UseInMemory("m1");
+        });
+
+        services.AddControllers();
+
+        services.AddTransient<IDemoService, DemoService>();
+        // AspectCore
+        services.ConfigureAspectCoreInterceptor(options => options.CacheProviderName = "m1");
+       
+    }
+
+     public void Configure(IApplicationBuilder app)
+     {           
+         app.UseRouting();
+         app.UseEndpoints(endpoints =>
+         {
+            endpoints.MapControllers();
+         });
+     }
+}
+```
+
+### .NET Core 2.x
+
+EasyCaching above version 0.8.0 no longer supports .NET Core 2.x
+
+
 ```csharp
 public class Startup
 {
-   //others...
+   // others...
 
     public IServiceProvider ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<IDemoService, DemoService>();
 
-        services.AddDefaultInMemoryCache();
+        services.AddEasyCaching(option=> 
+        {
+            // use memory cache
+            option.UseInMemory("default");
+        });
 
         services.AddMvc();
 
-        return services.ConfigureAspectCoreInterceptor();
+        return services.ConfigureAspectCoreInterceptor(options =>
+        {
+            // Specify which provider you want to use
+            options.CacheProviderName = "default";
+        });
     } 
 }
 ```
 
-### 3. Call the service
+### 4. Call the service
 
 The following code shows how to use in ASP.NET Core Web API.
 
@@ -101,7 +182,7 @@ public class ValuesController : Controller
     {
         if(type == 1)
         {
-            return _service.GetCurrentUtcTime();   
+            return _service.GetCurrentUtcTime();
         }
         else if(type == 2)
         {
@@ -115,7 +196,7 @@ public class ValuesController : Controller
         else
         {
             return "other";
-        }                
+        }
     }
 }
 ```

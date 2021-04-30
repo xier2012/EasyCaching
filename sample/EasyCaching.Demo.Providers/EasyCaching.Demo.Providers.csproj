@@ -1,12 +1,8 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EasyCaching.Redis\EasyCaching.Redis.csproj" />
@@ -14,8 +10,11 @@
     <ProjectReference Include="..\..\src\EasyCaching.SQLite\EasyCaching.SQLite.csproj" />
     <ProjectReference Include="..\..\src\EasyCaching.InMemory\EasyCaching.InMemory.csproj" />
     <ProjectReference Include="..\..\src\EasyCaching.HybridCache\EasyCaching.HybridCache.csproj" />
-    <ProjectReference Include="..\..\src\EasyCaching.Serialization.MessagePack\EasyCaching.Serialization.MessagePack.csproj" />
+    <ProjectReference Include="..\..\serialization\EasyCaching.Serialization.MessagePack\EasyCaching.Serialization.MessagePack.csproj" />
     <ProjectReference Include="..\..\src\EasyCaching.Core\EasyCaching.Core.csproj" />
+    <ProjectReference Include="..\..\bus\EasyCaching.Bus.CSRedis\EasyCaching.Bus.CSRedis.csproj" />
+    <ProjectReference Include="..\..\bus\EasyCaching.Bus.RabbitMQ\EasyCaching.Bus.RabbitMQ.csproj" />
+    <ProjectReference Include="..\..\bus\EasyCaching.Bus.Redis\EasyCaching.Bus.Redis.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Remove="easycaching.db" />

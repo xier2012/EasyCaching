@@ -7,16 +7,15 @@
 
     public partial class DefaultCSRedisCachingProvider : IRedisCachingProvider
     {
-
         public long ZAdd<T>(string cacheKey, Dictionary<T, double> cacheValues)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            var param = new List<(double, object)>();
+            var param = new List<(decimal, object)>();
 
             foreach (var item in cacheValues)
             {
-                param.Add((item.Value, _serializer.Serialize(item.Key)));
+                param.Add(((decimal, object))(item.Value, _serializer.Serialize(item.Key)));
             }
 
             var len = _cache.ZAdd(cacheKey, param.ToArray());
@@ -36,10 +35,17 @@
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            var len = _cache.ZCount(cacheKey, min, max);
+            var len = _cache.ZCount(cacheKey, (decimal)min, (decimal)max);
             return len;
         }
+        public double ZIncrBy(string cacheKey, string field, double val = 1)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+            ArgumentCheck.NotNullOrWhiteSpace(field, nameof(field));
 
+            var value = _cache.ZIncrBy(cacheKey, field, (decimal)val);
+            return (double)value;
+        }
         public long ZLexCount(string cacheKey, string min, string max)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
@@ -100,18 +106,18 @@
 
             var score = _cache.ZScore(cacheKey, bytes);
 
-            return score;
+            return (double?)score;
         }
 
         public async Task<long> ZAddAsync<T>(string cacheKey, Dictionary<T, double> cacheValues)
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            var param = new List<(double, object)>();
+            var param = new List<(decimal, object)>();
 
             foreach (var item in cacheValues)
             {
-                param.Add((item.Value, _serializer.Serialize(item.Key)));
+                param.Add(((decimal, object))(item.Value, _serializer.Serialize(item.Key)));
             }
 
             var len = await _cache.ZAddAsync(cacheKey, param.ToArray());
@@ -132,8 +138,17 @@
         {
             ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
 
-            var len = await _cache.ZCountAsync(cacheKey, min, max);
+            var len = await _cache.ZCountAsync(cacheKey, (decimal)min, (decimal)max);
             return len;
+        }
+
+        public async Task<double> ZIncrByAsync(string cacheKey, string field, double val = 1)
+        {
+            ArgumentCheck.NotNullOrWhiteSpace(cacheKey, nameof(cacheKey));
+            ArgumentCheck.NotNullOrWhiteSpace(field, nameof(field));
+
+            var value= await _cache.ZIncrByAsync(cacheKey, field, (decimal)val);
+            return (double)value;
         }
 
         public async Task<long> ZLexCountAsync(string cacheKey, string min, string max)
@@ -195,7 +210,7 @@
 
             var score = await _cache.ZScoreAsync(cacheKey, bytes);
 
-            return score;
+            return (double?)score;
         }
 
     }
